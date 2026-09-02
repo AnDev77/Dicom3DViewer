@@ -59,7 +59,8 @@ int main(int argc, char* argv[]) {
     MainController controller(&model, &viewer);
 
     // 에러 2 해결: 컨트롤러가 아닌 뷰어 객체의 show() 메서드 호출
-    viewer.show();
+	viewer.show();  
+
 
     return a.exec();
 

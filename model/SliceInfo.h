@@ -9,7 +9,9 @@ struct SliceInfo {
     int height;
     double slope;
     double intercept;
-    int bitsAllocated;
-    int pixelRepresentation;
-    int samplesPerPixel;
+	double imagePositionPatientZ; // 실제 Z좌표 (환자 기준 물리적 위치)
+	double pixelSpacingX;
+	double pixelSpacingY;
+   
+
 };

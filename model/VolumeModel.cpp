@@ -1,4 +1,4 @@
-#include "VolumeModel.h"
+ï»¿#include "VolumeModel.h"
 #include <QDir>
 #include <QFileInfoList>
 #include <gdcmImageReader.h>
@@ -7,23 +7,25 @@
 #include <vtkImageShiftScale.h>
 #include <vtkImageImport.h>
 #include<SliceInfo.h>
+#include <gdcmDataSet.h>
+#include <gdcmAttribute.h>
+
 
 #include <vector>
 
 vtkSmartPointer<vtkImageData> VolumeModel::LoadDicomSeriesPureGDCM(const QString& folderPath) {
     QDir dir(folderPath);
-    dir.setSorting(QDir::Name);
+    //dir.setSorting(QDir::Name);
     QFileInfoList fileList = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
 
     if (fileList.isEmpty()) return nullptr;
 
     std::vector<SliceInfo> validSlices;
-    double sliceSpacingZ = 2.0;
     double rescaleSlope = 1.0;
     double rescaleIntercept = 0.0;
     bool slopeInterceptFound = false;
 
-    // 1´Ü°è: °¢ DICOM ÆÄÀÏÀ» ¼øÈ¸ÇÏ¸ç ¸ŞÅ¸µ¥ÀÌÅÍ(°£°İ, Slope, Intercept) ¹× ÇÈ¼¿ ¹öÆÛ ÃßÃâ
+    // 1ë‹¨ê³„: ê° DICOM íŒŒì¼ì„ ìˆœíšŒí•˜ë©° ë©”íƒ€ë°ì´í„°(ê°„ê²©, Slope, Intercept) ë° í”½ì…€ ë²„í¼ ì¶”ì¶œ
     for (const QFileInfo& fileInfo : fileList) {
         std::string utf8Path = fileInfo.absoluteFilePath().toUtf8().constData();
         gdcm::ImageReader reader;
@@ -31,70 +33,91 @@ vtkSmartPointer<vtkImageData> VolumeModel::LoadDicomSeriesPureGDCM(const QString
         if (!reader.Read()) continue;
 
         const gdcm::Image& image = reader.GetImage();
-        const double* spacing = image.GetSpacing();
-        if (spacing && spacing[2] > 0.0) {
-            sliceSpacingZ = spacing[2]; // ZÃà ¹æÇâ ½½¶óÀÌ½º µÎ²²(Spacing) È®º¸
-        }
+        
 
-        // ¹Ìµğ¾ö ¾ÆÆ¼Å¬ ÇÙ½É: ½Ã¸®Áî ³» °øÅëµÈ Rescale Slope¿Í Intercept ÃßÃâ (Ã¹ ½½¶óÀÌ½º ±âÁØ)
         if (!slopeInterceptFound) {
             rescaleSlope = image.GetSlope();
             rescaleIntercept = image.GetIntercept();
             slopeInterceptFound = true;
         }
 
+
+
         unsigned long bufferLength = image.GetBufferLength();
         if (bufferLength == 0) continue;
 
+        // GDCMìœ¼ë¡œ Zì¢Œí‘œ(Image Position Patient) ì¶”ì¶œ ë¡œì§ í•„ìš”
+        // (ê¸°ì¡´ SliceInfo êµ¬ì¡°ì²´ì— imagePositionPatientZ ë³€ìˆ˜ê°€ ìˆë‹¤ê³  ê°€ì •)
+        const double* origin = image.GetOrigin();
+        double zPos = (origin != nullptr) ? origin[2] : 0.0;
+
         QByteArray pixelData;
         pixelData.resize(bufferLength);
-        // ¿øº» ÇÈ¼¿ ¹è¿­(Raw Pixel Data) º¹»ç
+        // ì›ë³¸ í”½ì…€ ë°°ì—´(Raw Pixel Data) ë³µì‚¬
         if (!image.GetBuffer(pixelData.data())) continue;
+
 
         SliceInfo info;
         info.filePath = utf8Path;
         info.rawPixelData = pixelData;
-        info.width = image.GetDimension(0);
-        info.height = image.GetDimension(1);
+        info.imagePositionPatientZ = zPos;
+        info.width = image.GetColumns();
+        info.height = image.GetRows();
+        
+        const double* spacing = image.GetSpacing();
+        info.pixelSpacingX = spacing ? spacing[0] : 1.0;
+        info.pixelSpacingY = spacing ? spacing[1] : 1.0;
+
+        // ë²„í¼ ì¶”ì¶œ ë° ê¸°íƒ€ ë¡œì§ (ê¸°ì¡´ ì½”ë“œ ìœ ì§€)
         validSlices.push_back(info);
     }
 
     if (validSlices.empty()) return nullptr;
 
-    // 2´Ü°è: °³º° 2D ½½¶óÀÌ½ºµéÀ» ZÃà ¹æÇâÀ¸·Î °áÇÕÇÏ±â À§ÇÑ vtkImageAppend ¼³Á¤
-    // - vtkImageAppend: ¿©·¯ °³ÀÇ µ¶¸³µÈ 2D/3D ÀÌ¹ÌÁö µ¥ÀÌÅÍ Æ÷ÀÎÆ®¸¦ ÁöÁ¤ÇÑ Ãà(SetAppendAxis) ±âÁØÀ¸·Î º´ÇÕÇÏ¿© ÇÏ³ªÀÇ 3D º¼·ıÀ¸·Î ¸¸µê
+    // âœ… 2ë‹¨ê³„: ì‹¤ì œ Zì¢Œí‘œ(í™˜ì ê¸°ì¤€ ë¬¼ë¦¬ì  ìœ„ì¹˜) ê¸°ë°˜ìœ¼ë¡œ ì˜¤ë¦„ì°¨ìˆœ ì •ë ¬
+    std::sort(validSlices.begin(), validSlices.end(), [](const SliceInfo& a, const SliceInfo& b) {
+        return a.imagePositionPatientZ < b.imagePositionPatientZ;
+        });
+
+    // âœ… 3ë‹¨ê³„: ì •ë ¬ëœ ìŠ¬ë¼ì´ìŠ¤ë“¤ ê°„ì˜ ì‹¤ì œ ë¬¼ë¦¬ì  Zì¶• ê°„ê²©(Spacing) ê³„ì‚°
+    double sliceSpacingZ;
+    if (validSlices.size() > 1) {
+        sliceSpacingZ = std::abs(validSlices[1].imagePositionPatientZ - validSlices[0].imagePositionPatientZ);
+        if (sliceSpacingZ <= 0.0) sliceSpacingZ = 1.0; // ë°©ì–´ ì½”ë“œ
+    }
+
     auto appendFilter = vtkSmartPointer<vtkImageAppend>::New();
-    appendFilter->SetAppendAxis(2); // 2¹ø Ãà(ZÃà)À» ±âÁØÀ¸·Î ½½¶óÀÌ½ºµéÀ» À§·Î ½×¾Æ ¿Ã¸²
+    appendFilter->SetAppendAxis(2);
+
 
     for (const auto& slice : validSlices) {
-        // - vtkImageImport: ¸Ş¸ğ¸® »ó¿¡ Á¸ÀçÇÏ´Â ¼ø¼ö ¹ÙÀÌÆ® Æ÷ÀÎÅÍ(Raw Buffer)¸¦ VTK°¡ ÀÌÇØÇÒ ¼ö ÀÖ´Â vtkImageData Çü½ÄÀ¸·Î °¨½ÎÁÖ´Â ¿ªÇÒ
+        // - vtkImageImport: ë©”ëª¨ë¦¬ ìƒì— ì¡´ì¬í•˜ëŠ” ìˆœìˆ˜ ë°”ì´íŠ¸ í¬ì¸í„°(Raw Buffer)ë¥¼ VTKê°€ ì´í•´í•  ìˆ˜ ìˆëŠ” vtkImageData í˜•ì‹ìœ¼ë¡œ ê°ì‹¸ì£¼ëŠ” ì—­í• 
         auto importer = vtkSmartPointer<vtkImageImport>::New();
-        importer->SetDataSpacing(1.0, 1.0, sliceSpacingZ); // ÇÈ¼¿ °£°İ ¹× ZÃà ½½¶óÀÌ½º µÎ²² ÁöÁ¤
-        importer->SetDataOrigin(0.0, 0.0, 0.0);             // 3D °ø°£ »óÀÇ ½ÃÀÛ ÁÂÇ¥ (Origin)
-        importer->SetWholeExtent(0, slice.width - 1, 0, slice.height - 1, 0, 0); // ÀÌ¹ÌÁö Å©±â ¹üÀ§(Extent) ¼³Á¤
-        importer->SetDataExtent(0, slice.width - 1, 0, slice.height - 1, 0, 0); // ¡Ú ÀÌ ºÎºĞÀ» Ãß°¡/º¯°æ
+        importer->SetDataSpacing(slice.pixelSpacingX, slice.pixelSpacingY, sliceSpacingZ);
+        importer->SetDataOrigin(0.0, 0.0, 0.0);             // 3D ê³µê°„ ìƒì˜ ì‹œì‘ ì¢Œí‘œ (Origin)
+        importer->SetWholeExtent(0, slice.width - 1, 0, slice.height - 1, 0, 0); // ì´ë¯¸ì§€ í¬ê¸° ë²”ìœ„(Extent) ì„¤ì •
+        importer->SetDataExtent(0, slice.width - 1, 0, slice.height - 1, 0, 0); // â˜… ì´ ë¶€ë¶„ì„ ì¶”ê°€/ë³€ê²½
 
 
-        importer->SetDataScalarTypeToShort();              // CT µ¥ÀÌÅÍ Ç¥ÁØÀÎ 16-bit Signed Short Å¸ÀÔ ÁöÁ¤
-        importer->SetNumberOfScalarComponents(1);          // Èæ¹é(Grayscale) ´ÜÀÏ Ã¤³Î ¼³Á¤
-        importer->SetImportVoidPointer(const_cast<char*>(slice.rawPixelData.constData())); // ¸Ş¸ğ¸® ÁÖ¼Ò ¿¬µ¿
+        importer->SetDataScalarTypeToShort();              // CT ë°ì´í„° í‘œì¤€ì¸ 16-bit Signed Short íƒ€ì… ì§€ì •
+        importer->SetNumberOfScalarComponents(1);          // í‘ë°±(Grayscale) ë‹¨ì¼ ì±„ë„ ì„¤ì •
+        importer->SetImportVoidPointer(const_cast<char*>(slice.rawPixelData.constData())); // ë©”ëª¨ë¦¬ ì£¼ì†Œ ì—°ë™
         importer->Update();
 
-        // °¢ ½½¶óÀÌ½º¸¦ Å¥¿¡ Ãß°¡ÇÏµí Append ÇÊÅÍ¿¡ ÀÔ·Â
+        // ê° ìŠ¬ë¼ì´ìŠ¤ë¥¼ íì— ì¶”ê°€í•˜ë“¯ Append í•„í„°ì— ì…ë ¥
         appendFilter->AddInputData(importer->GetOutput());
     }
     appendFilter->Update();
 
-    // 3´Ü°è: ¹Ìµğ¾ö ¾ÆÆ¼Å¬ÀÇ HU °ø½Ä Àû¿ëÀ» À§ÇÑ vtkImageShiftScale Ã³¸®
-    // - vtkImageShiftScale: º¼·ı ÀüÃ¼ÀÇ ½ºÄ®¶ó °ª¿¡ ÀÏ°ıÀûÀ¸·Î °ö¼À(Scale)°ú µ¡¼À(Shift) ¿¬»êÀ» ¼öÇàÇÏ´Â ÇÊÅÍ
-    //   °ø½Ä Àû¿ë °á°ú: Output = (Input * Scale) + Shift  ==> Áï, ¿øº» ÇÈ¼¿ °ªÀÌ Á¤È®ÇÑ Hounsfield Unit(HU)À¸·Î º¯È¯µÊ
+    // - vtkImageShiftScale: ë³¼ë¥¨ ì „ì²´ì˜ ìŠ¤ì¹¼ë¼ ê°’ì— ì¼ê´„ì ìœ¼ë¡œ ê³±ì…ˆ(Scale)ê³¼ ë§ì…ˆ(Shift) ì—°ì‚°ì„ ìˆ˜í–‰í•˜ëŠ” í•„í„°
+    //   ê³µì‹ ì ìš© ê²°ê³¼: Output = (Input * Scale) + Shift  ==> ì¦‰, ì›ë³¸ í”½ì…€ ê°’ì´ ì •í™•í•œ Hounsfield Unit(HU)ìœ¼ë¡œ ë³€í™˜ë¨
     auto shiftScaleFilter = vtkSmartPointer<vtkImageShiftScale>::New();
     shiftScaleFilter->SetInputData(appendFilter->GetOutput());
-    shiftScaleFilter->SetScale(rescaleSlope);     // Rescale Slope Àû¿ë (°öÇÏ±â)
-    shiftScaleFilter->SetShift(rescaleIntercept); // Rescale Intercept Àû¿ë (´õÇÏ±â)
-    shiftScaleFilter->SetOutputScalarTypeToShort(); // ¿¬»ê ÈÄ µ¥ÀÌÅÍ ¼Õ½ÇÀ» ¸·±â À§ÇØ 16-bit Short À¯Áö
+    shiftScaleFilter->SetScale(rescaleSlope);     // Rescale Slope ì ìš© (ê³±í•˜ê¸°)
+    shiftScaleFilter->SetShift(rescaleIntercept); // Rescale Intercept ì ìš© (ë”í•˜ê¸°)
+    shiftScaleFilter->SetOutputScalarTypeToShort(); // ì—°ì‚° í›„ ë°ì´í„° ì†ì‹¤ì„ ë§‰ê¸° ìœ„í•´ 16-bit Short ìœ ì§€
     shiftScaleFilter->Update();
 
-    // ÃÖÁ¾ÀûÀ¸·Î HU ¹Ğµµ ´ÜÀ§·Î º¯È¯ ¿Ï·áµÈ vtkImageData ·»´õ¸µ ÆÄÀÌÇÁ¶óÀÎÀ¸·Î ¹İÈ¯
+    // ìµœì¢…ì ìœ¼ë¡œ HU ë°€ë„ ë‹¨ìœ„ë¡œ ë³€í™˜ ì™„ë£Œëœ vtkImageData ë Œë”ë§ íŒŒì´í”„ë¼ì¸ìœ¼ë¡œ ë°˜í™˜
     return shiftScaleFilter->GetOutput();
 }

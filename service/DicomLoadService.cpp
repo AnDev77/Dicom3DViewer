@@ -1,4 +1,6 @@
-﻿#include "VolumeModel.h"
+﻿#include "DicomLoadService.h"
+
+
 #include <QDir>
 #include <QFileInfoList>
 #include <gdcmImageReader.h>
@@ -6,19 +8,29 @@
 #include <vtkImageAppend.h>
 #include <vtkImageShiftScale.h>
 #include <vtkImageImport.h>
-#include<SliceInfo.h>
+#include<../model/SliceInfo.h>
 #include <gdcmDataSet.h>
 #include <gdcmAttribute.h>
 
 
 #include <vector>
 
-vtkSmartPointer<vtkImageData> VolumeModel::LoadDicomSeriesPureGDCM(const QString& folderPath) {
-    QDir dir(folderPath);
+// 내부 Worker (QThread에서 실행될 작업 단위)
+class InternalLoaderWorker : public QObject {
+    Q_OBJECT
+public:
+    InternalLoaderWorker(QString path) : m_path(path) {}
+
+public slots:
+    void run() {
+    QDir dir(m_path);
     //dir.setSorting(QDir::Name);
     QFileInfoList fileList = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
 
-    if (fileList.isEmpty()) return nullptr;
+    if (fileList.isEmpty()){
+        emit error("선택한 폴더에 DICOM 파일이 없습니다.");
+        return;
+	}
 
     std::vector<SliceInfo> validSlices;
     double rescaleSlope = 1.0;
@@ -72,7 +84,10 @@ vtkSmartPointer<vtkImageData> VolumeModel::LoadDicomSeriesPureGDCM(const QString
         validSlices.push_back(info);
     }
 
-    if (validSlices.empty()) return nullptr;
+    if (validSlices.empty()) {
+        emit errorOccurred("유효한 DICOM 슬라이스를 찾지 못했습니다.");
+        return;
+    }
 
     // ✅ 2단계: 실제 Z좌표(환자 기준 물리적 위치) 기반으로 오름차순 정렬
     std::sort(validSlices.begin(), validSlices.end(), [](const SliceInfo& a, const SliceInfo& b) {
@@ -119,5 +134,43 @@ vtkSmartPointer<vtkImageData> VolumeModel::LoadDicomSeriesPureGDCM(const QString
     shiftScaleFilter->Update();
 
     // 최종적으로 HU 밀도 단위로 변환 완료된 vtkImageData 렌더링 파이프라인으로 반환
-    return shiftScaleFilter->GetOutput();
+    emit finished(shiftScaleFilter->GetOutput());
+    }
+
+signals:
+    void finished(vtkSmartPointer<vtkImageData> imageData);
+    void errorOccurred(const QString& message);
+
+private:
+    QString m_path;
+};
+
+// --- DicomLoadService 구현부 ---
+DicomLoadService::DicomLoadService(QObject* parent) : QObject(parent) {}
+DicomLoadService::~DicomLoadService() {}
+
+void DicomLoadService::loadAsync(const QString& folderPath) {
+    QThread* thread = new QThread(this);
+    InternalLoaderWorker* worker = new InternalLoaderWorker(folderPath);
+    worker->moveToThread(thread);
+
+    connect(thread, &QThread::started, worker, &InternalLoaderWorker::run);
+    connect(worker, &InternalLoaderWorker::finished, this, [=](vtkSmartPointer<vtkImageData> data) {
+        emit finished(data);
+        thread->quit();
+        });
+    connect(worker, &InternalLoaderWorker::errorOccurred, this, [=](QString msg) {
+        emit error(msg);
+        thread->quit();
+        });
+
+    // 스레드 종료 시 메모리 자동 정리
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    connect(thread, &QThread::finished, this, &QObject::deleteLater);
+
+    thread->start();
 }
+
+// moc 빌드를 위해 포함 (Qt 빌드 시스템 설정에 따라 생략 가능)
+#include "DicomLoadService.moc"

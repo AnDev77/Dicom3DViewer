@@ -11,7 +11,7 @@ VTK_MODULE_INIT(vtkRenderingVolumeOpenGL2);
 
 
 #include "controller/MainController.h"
-#include "model/VolumeModel.h"
+#include "service/DicomLoadService.h"
 #include "viewer/DicomVolumeViewer.h"
 // [여기에 기존 Notion 문서의 모든 #pragma comment(lib, "...") 복사 붙여넣기]
 #pragma comment(lib, "gdcmMSFF.lib")

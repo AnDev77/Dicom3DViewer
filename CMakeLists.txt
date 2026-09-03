@@ -32,6 +32,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 file(GLOB_RECURSE MODEL_SRC "model/*.cpp" "model/*.h")
 file(GLOB_RECURSE CONTROLLER_SRC "controller/*.cpp" "controller/*.h")
 file(GLOB_RECURSE VIEWER_SRC "viewer/*.cpp" "viewer/*.h")
+file(GLOB_RECURSE VIEWER_SRC "service/*.cpp" "service/*.h")
 
 # 긁어온 변수들을 통째로 실행 파일에 집어넣음
 add_executable(${PROJECT_NAME}

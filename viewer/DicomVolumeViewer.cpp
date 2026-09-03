@@ -6,6 +6,12 @@
 #include <vtkVolumeProperty.h>
 #include <vtkVolume.h>
 
+#include <vtkImageReslice.h> // ★ 2D 단면 추출을 위한 필수 헤더
+#include <vtkImageSliceMapper.h>
+#include <vtkImageSlice.h>
+#include <vtkImageActor.h>
+#include<vtkMatrix4x4.h>
+
 DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     this->setWindowTitle("DICOM Series to 3D Volume Viewer");
     this->resize(1024, 768);
@@ -14,13 +20,25 @@ DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     QVBoxLayout* layout = new QVBoxLayout(centralWidget);
 
     btnOpenDicom = new QPushButton("DICOM open folder", this);
-    btnOpenDicom->setFixedHeight(40);
+    btnOpenDicom -> setFixedHeight(40);
+    
+    m_showButton = new QPushButton("Show Volume", this);
+    
+    m_viewComboBox = new QComboBox(this);
 
+    m_viewComboBox->addItem("Axial");
+    m_viewComboBox->addItem("Coronal");
+    m_viewComboBox->addItem("Sagittal");
     vtkWidget = new QVTKOpenGLNativeWidget(this);
 
+
     layout->addWidget(btnOpenDicom);
+    
+    layout->addWidget(m_viewComboBox);
+	layout->addWidget(m_showButton);
     layout->addWidget(vtkWidget);
-    this->setCentralWidget(centralWidget);
+    
+this->setCentralWidget(centralWidget);
 
     renderWindow = vtkSmartPointer<vtkGenericOpenGLRenderWindow>::New();
     vtkWidget->setRenderWindow(renderWindow);
@@ -28,8 +46,17 @@ DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     renderer = vtkSmartPointer<vtkRenderer>::New();
     renderer->SetBackground(0.1, 0.1, 0.1);
     renderWindow->AddRenderer(renderer);
+
 }
 
+QPushButton* DicomVolumeViewer::getOpenButton() const { return btnOpenDicom; }
+QPushButton* DicomVolumeViewer::getShowButton() const { return m_showButton; }
+QComboBox* DicomVolumeViewer::getComboBox() const {
+    return m_viewComboBox;
+}
+QString DicomVolumeViewer::getSelectedViewMode() const {
+    return m_viewComboBox->currentText();
+}
 
 void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     if (!imageData) return;
@@ -78,14 +105,71 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     volumeProperty->SetInterpolationTypeToLinear(); // 선형 보간을 적용해 계단 현상 완화
     volumeProperty->SetAmbient(0.3);                // 주변광 세기 설정
     volumeProperty->SetDiffuse(0.7);                // 확산광 세기 설정
-    volumeProperty->SetSpecular(0.2);               // 반사광(하이라이트) 세기 설정
+    volumeProperty->SetSpecular(0.3);               // 반사광(하이라이트) 세기 설정
 
+   
+    
+    
+    
     auto volume = vtkSmartPointer<vtkVolume>::New();
     volume->SetMapper(volumeMapper);
     volume->SetProperty(volumeProperty);
 
     renderer->RemoveAllViewProps();
     renderer->AddVolume(volume);
+    renderer->ResetCamera();
+    renderWindow->Render();
+};
+
+void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QString viewMode) {
+    if (!imageData) return;
+    auto reslice = vtkSmartPointer<vtkImageReslice>::New();
+    
+    double center[3];
+    imageData->GetCenter(center);
+
+    reslice->SetInputData(imageData);
+    reslice->SetOutputDimensionality(2); // 출력을 2D로 고정
+
+    auto resliceAxes = vtkSmartPointer<vtkMatrix4x4>::New();
+    resliceAxes->Identity();
+
+    // 뷰 모드에 따른 단면 지정 (행렬을 직접 안 건드리고 간단하게 조절 가능)
+    if (viewMode.contains("Axial")) {
+        // Z축 고정 단면
+        resliceAxes->SetElement(0, 0, 1); resliceAxes->SetElement(0, 1, 0); resliceAxes->SetElement(0, 2, 0);
+        resliceAxes->SetElement(1, 0, 0); resliceAxes->SetElement(1, 1, 1); resliceAxes->SetElement(1, 2, 0);
+        resliceAxes->SetElement(2, 0, 0); resliceAxes->SetElement(2, 1, 0); resliceAxes->SetElement(2, 2, 1);
+    }
+    else if (viewMode.contains("Coronal")) {
+        // Y축 고정 단면
+        resliceAxes->SetElement(0, 0, 1); resliceAxes->SetElement(0, 1, 0); resliceAxes->SetElement(0, 2, 0);
+        resliceAxes->SetElement(1, 0, 0); resliceAxes->SetElement(1, 1, 0); resliceAxes->SetElement(1, 2, 1);
+        resliceAxes->SetElement(2, 0, 0); resliceAxes->SetElement(2, 1, 1); resliceAxes->SetElement(2, 2, 0);
+    }
+    else if (viewMode.contains("Sagittal")) {
+        // X축 고정 단면
+        resliceAxes->SetElement(0, 0, 0); resliceAxes->SetElement(0, 1, 0); resliceAxes->SetElement(0, 2, 1);
+        resliceAxes->SetElement(1, 0, 0); resliceAxes->SetElement(1, 1, 1); resliceAxes->SetElement(1, 2, 0);
+        resliceAxes->SetElement(2, 0, 1); resliceAxes->SetElement(2, 1, 0); resliceAxes->SetElement(2, 2, 0);
+    }
+
+    // ★ 핵심 포인트: 회전 행렬의 이동(Translation) 위치에 볼륨의 정확한 중심점 지정
+    // 이 처리를 해야 Coronal/Sagittal 변환 시 절단면이 볼륨 바깥(허공)으로 튕겨 나가지 않음
+    resliceAxes->SetElement(0, 3, center[0]);
+    resliceAxes->SetElement(1, 3, center[1]);
+    resliceAxes->SetElement(2, 3, center[2]);
+    
+    reslice->SetResliceAxes(resliceAxes);
+	reslice->SetInterpolationModeToLinear(); // 선형 보간 적용
+    reslice->Update();
+
+    // 렌더러에 2D 액터로 올리기
+    auto imageActor = vtkSmartPointer<vtkImageActor>::New();
+    imageActor->GetMapper()->SetInputConnection(reslice->GetOutputPort());
+
+    renderer->RemoveAllViewProps();
+    renderer->AddActor(imageActor);
     renderer->ResetCamera();
     renderWindow->Render();
 }

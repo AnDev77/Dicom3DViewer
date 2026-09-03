@@ -1,18 +1,21 @@
 #pragma once
 #include <QObject>
-#include "../model/VolumeModel.h"
-#include "../viewer/DicomVolumeViewer.h"
+#include <vtkSmartPointer.h>
+#include <vtkImageData.h>
+class DicomVolumeViewer;
 
 class MainController : public QObject {
     Q_OBJECT
-
 public:
-    MainController(VolumeModel* model, DicomVolumeViewer* viewer, QObject* parent = nullptr);
+    explicit MainController(DicomVolumeViewer* viewer, QObject* parent = nullptr);
+    ~MainController() = default;
 
 private slots:
     void onOpenFolderClicked();
 
 private:
-    VolumeModel* model;
     DicomVolumeViewer* viewer;
+
+    // 백그라운드 스레드에서 로딩된 원본 3D 볼륨 데이터를 보관하는 단일 소스(Single Source of Truth)
+    vtkSmartPointer<vtkImageData> m_sharedVolumeData = nullptr;
 };

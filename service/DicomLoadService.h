@@ -1,8 +1,8 @@
 #pragma once
 #include <QObject>
 #include <QString>
-#include <vtkSmartPointer>
-#include <vtkImageData>
+#include <vtkSmartPointer.h>
+#include <vtkImageData.h>
 
 class DicomLoadService : public QObject {
     Q_OBJECT

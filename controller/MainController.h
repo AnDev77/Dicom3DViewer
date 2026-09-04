@@ -2,6 +2,7 @@
 #include <QObject>
 #include <vtkSmartPointer.h>
 #include <vtkImageData.h>
+#include <vtkPolyData.h>
 class DicomVolumeViewer;
 
 class MainController : public QObject {
@@ -21,4 +22,5 @@ private:
 
     // 백그라운드 스레드에서 로딩된 원본 3D 볼륨 데이터를 보관하는 단일 소스(Single Source of Truth)
     vtkSmartPointer<vtkImageData> m_sharedVolumeData = nullptr;
+    vtkSmartPointer<vtkImageData> m_scapulaMesh;        // 추출된 견갑골 메쉬
 };

@@ -1,0 +1,53 @@
+name: Build Dicom3DViewer
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            build_type: Release
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Ninja (Fast Build Tool)
+      uses: seanmiddleditch/gha-setup-ninja@v3
+
+    # vcpkg 바이너리 및 패키지 캐싱 설정 (핵심: VTK, Qt6 재빌드 방지)
+    - name: Setup vcpkg caching
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ github.workspace }}/vcpkg_installed
+          C:/vcpkg/installed
+          %LOCALAPPDATA%/vcpkg/archives
+          ~/.cache/vcpkg/archives
+        key: vcpkg-${{ matrix.os }}-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('CMakeLists.txt') }}
+        restore-keys: |
+          vcpkg-${{ matrix.os }}-${{ hashFiles('vcpkg.json') }}-
+          vcpkg-${{ matrix.os }}-
+
+    - name: Configure CMake with vcpkg
+      run: |
+        cmake -B build -S . \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+          -G "Ninja"
+
+    - name: Build Project
+      run: |
+        cmake --build build --config ${{ matrix.build_type }}

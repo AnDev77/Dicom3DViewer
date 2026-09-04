@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 project(BuildTest)
 
+# vcpkg 툴체인 파일 경로 연결 (환경 변수 VCPKG_ROOT 활용)
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if(DEFINED ENV{VCPKG_ROOT})
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+    endif()
+endif()
+
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -32,6 +40,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 file(GLOB_RECURSE MODEL_SRC "model/*.cpp" "model/*.h")
 file(GLOB_RECURSE CONTROLLER_SRC "controller/*.cpp" "controller/*.h")
 file(GLOB_RECURSE VIEWER_SRC "viewer/*.cpp" "viewer/*.h")
+file(GLOB_RECURSE SERVICE_SRC "service/*.cpp" "service/*.h")
 
 # 긁어온 변수들을 통째로 실행 파일에 집어넣음
 add_executable(${PROJECT_NAME}
@@ -39,6 +48,7 @@ add_executable(${PROJECT_NAME}
     ${MODEL_SRC}
     ${CONTROLLER_SRC}
     ${VIEWER_SRC}
+    ${SERVICE_SRC}
 )
 
 
@@ -46,6 +56,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/model
     ${CMAKE_CURRENT_SOURCE_DIR}/viewer
     ${CMAKE_CURRENT_SOURCE_DIR}/controller
+    ${CMAKE_CURRENT_SOURCE_DIR}/service
 )
 
 # 3. 라이브러리 링크

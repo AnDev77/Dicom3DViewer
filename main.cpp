@@ -11,8 +11,10 @@ VTK_MODULE_INIT(vtkRenderingVolumeOpenGL2);
 
 
 #include "controller/MainController.h"
-#include "model/VolumeModel.h"
+#include "service/DicomLoadService.h"
 #include "viewer/DicomVolumeViewer.h"
+
+
 // [여기에 기존 Notion 문서의 모든 #pragma comment(lib, "...") 복사 붙여넣기]
 #pragma comment(lib, "gdcmMSFF.lib")
 #pragma comment(lib, "gdcmDICT.lib")
@@ -51,12 +53,10 @@ int main(int argc, char* argv[]) {
     QSurfaceFormat::setDefaultFormat(QVTKOpenGLNativeWidget::defaultFormat());
 
     QApplication a(argc, argv);
-
-    VolumeModel model;
     DicomVolumeViewer viewer;
 
     // 에러 1 해결: 모델과 뷰어의 주소(&)를 넘겨주며 컨트롤러 생성
-    MainController controller(&model, &viewer);
+    MainController controller(&viewer);
 
     // 에러 2 해결: 컨트롤러가 아닌 뷰어 객체의 show() 메서드 호출
 	viewer.show();  

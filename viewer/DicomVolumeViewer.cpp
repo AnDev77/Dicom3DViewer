@@ -44,7 +44,7 @@ this->setCentralWidget(centralWidget);
     vtkWidget->setRenderWindow(renderWindow);
 
     renderer = vtkSmartPointer<vtkRenderer>::New();
-    renderer->SetBackground(0.1, 0.1, 0.1);
+    renderer->SetBackground(0.2, 0.2, 0.2);
     renderWindow->AddRenderer(renderer);
 
 }
@@ -63,7 +63,6 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
 
     auto volumeMapper = vtkSmartPointer<vtkSmartVolumeMapper>::New();
     volumeMapper->SetInputData(imageData);
-
     // ==========================================
     // 1. 투명도 전달 함수 (Opacity Transfer Function)
     // ==========================================
@@ -81,12 +80,12 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     opacityFunc->AddPoint(800.0, 0.85); // 단단한 피질골(Compact bone): 선명하게 드러나도록 불투명도 높임 (0.85)
     opacityFunc->AddPoint(1500.0, 1.0);  // 초고밀도 뼈 및 임플란트 영역: 완전 불투명 처리 (1.0)
 
-    // ==========================================
-    // 2. 색상 전달 함수 (Color Transfer Function)
-    // ==========================================
-    // vtkColorTransferFunction: 밀도 값에 따라 3D 렌더링 색상(RGB)을 매핑하는 함수
-    // - 첫 번째 인자 (double): HU 밀도 값
-    // - 두 번째~네 번째 인자 (double, double, double): Red, Green, Blue 색상 비율 (0.0 ~ 1.0 범위)
+    //// ==========================================
+    //// 2. 색상 전달 함수 (Color Transfer Function)
+    //// ==========================================
+    //// vtkColorTransferFunction: 밀도 값에 따라 3D 렌더링 색상(RGB)을 매핑하는 함수
+    //// - 첫 번째 인자 (double): HU 밀도 값
+    //// - 두 번째~네 번째 인자 (double, double, double): Red, Green, Blue 색상 비율 (0.0 ~ 1.0 범위)
     auto colorFunc = vtkSmartPointer<vtkColorTransferFunction>::New();
 
     colorFunc->AddRGBPoint(-1000.0, 0.0, 0.0, 0.0);   // 공기 영역: 검은색 (투명도에 의해 보이지 않음)
@@ -95,6 +94,9 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     colorFunc->AddRGBPoint(800.0, 0.95, 0.95, 0.95);// 일반 뼈 영역: 밝은 회색톤
     colorFunc->AddRGBPoint(1500.0, 1.0, 1.0, 1.0);   // 고밀도 뼈 영역: 깨끗한 순백색(White)으로 강조
 
+
+
+
     // ==========================================
     // 3. 볼륨 속성 및 렌더러 설정
     // ==========================================
@@ -102,16 +104,14 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     volumeProperty->SetColor(colorFunc);
     volumeProperty->SetScalarOpacity(opacityFunc);
     volumeProperty->SetShade(true);                 // 조명 효과(Shading) 활성화로 뼈의 입체감과 굴곡을 극대화
-    volumeProperty->SetInterpolationTypeToLinear(); // 선형 보간을 적용해 계단 현상 완화
+    volumeProperty->SetInterpolationTypeToLinear(); // 선형 보간을 적용
     volumeProperty->SetAmbient(0.3);                // 주변광 세기 설정
-    volumeProperty->SetDiffuse(0.7);                // 확산광 세기 설정
-    volumeProperty->SetSpecular(0.3);               // 반사광(하이라이트) 세기 설정
+    volumeProperty->SetDiffuse(0.6);                // 확산광 세기 설정
+    volumeProperty->SetSpecular(0.4);               // 반사광(하이라이트) 세기 설정
 
-   
-    
-    
-    
     auto volume = vtkSmartPointer<vtkVolume>::New();
+
+    volumeMapper->SetSampleDistance(volumeMapper->GetSampleDistance() * 0.5);
     volume->SetMapper(volumeMapper);
     volume->SetProperty(volumeProperty);
 

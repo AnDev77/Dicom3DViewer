@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 project(BuildTest)
 
+# vcpkg 툴체인 파일 경로 연결 (환경 변수 VCPKG_ROOT 활용)
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if(DEFINED ENV{VCPKG_ROOT})
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+    endif()
+endif()
+
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)

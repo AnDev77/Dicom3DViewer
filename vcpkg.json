@@ -1,0 +1,8 @@
+{
+  "name": "dicom-viewer-project",
+  "version": "1.0.0",
+  "dependencies": [
+    "vtk",
+    "qt6-base"
+  ]
+}

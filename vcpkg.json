@@ -3,6 +3,21 @@
   "version": "1.0.0",
   "dependencies": [
     "vtk",
-    "qt6-base"
+    "qt6-base",
+    "gdcm"
+  ],
+  "overrides": [
+    {
+      "name": "vtk",
+      "version": "9.3.0"
+    },
+    {
+      "name": "qt6-base",
+      "version": "6.7.3"
+    },
+    {
+      "name": "gdcm",
+      "version": "3.2.7"
+    }
   ]
 }

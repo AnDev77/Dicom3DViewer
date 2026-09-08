@@ -12,6 +12,15 @@
 #include <vtkImageActor.h>
 #include<vtkMatrix4x4.h>
 
+
+//브러시 도입을 위한 헤더 추가   
+#include <vtkImageBlend.h>
+#include <vtkImageMapToColors.h>
+#include <vtkLookupTable.h>
+
+#include <vtkWindowLevelLookupTable.h>
+
+
 DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     this->setWindowTitle("DICOM Series to 3D Volume Viewer");
     this->resize(1024, 768);
@@ -125,6 +134,40 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
     if (!imageData) return;
     auto reslice = vtkSmartPointer<vtkImageReslice>::New();
     
+
+    // -------------------------------------------------------------
+    // [Step 1 테스트용]: 가짜 마스크 데이터 생성 (화면 중앙에 붉은 점 찍기)
+    // 실제 구현 시에는 이 부분을 MaskVolumeModel에서 받아오게 됩니다.
+    // -------------------------------------------------------------
+    auto maskData = vtkSmartPointer<vtkImageData>::New();
+    maskData->SetDimensions(imageData->GetDimensions());
+    maskData->SetSpacing(imageData->GetSpacing());
+    maskData->SetOrigin(imageData->GetOrigin());
+    maskData->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
+
+    // 전체를 0(배경)으로 초기화
+    memset(maskData->GetScalarPointer(), 0, maskData->GetNumberOfPoints() * sizeof(unsigned char));
+
+    // 정중앙 좌표 계산하여 반경 10픽셀 크기의 구(Sphere) 라벨(1) 칠하기
+    int dims[3];
+    maskData->GetDimensions(dims);
+    int cx = dims[0] / 2, cy = dims[1] / 2, cz = dims[2] / 2;
+    int radius = 10;
+    for (int z = cz - radius; z <= cz + radius; ++z) {
+        for (int y = cy - radius; y <= cy + radius; ++y) {
+            for (int x = cx - radius; x <= cx + radius; ++x) {
+                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz) <= radius * radius) {
+                    unsigned char* pixel = static_cast<unsigned char*>(maskData->GetScalarPointer(x, y, z));
+                    if (pixel) *pixel = 1; // 1번 라벨 부여
+                }
+            }
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+
+
+
     double center[3];
     imageData->GetCenter(center);
 
@@ -164,12 +207,66 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
 	reslice->SetInterpolationModeToLinear(); // 선형 보간 적용
     reslice->Update();
 
+
+
+    // ★ Window/Level Lookup Table
+    auto dicomLut = vtkSmartPointer<vtkWindowLevelLookupTable>::New();
+    dicomLut->SetWindow(1000); // Window Width
+    dicomLut->SetLevel(300);   // Window Level
+    dicomLut->Build();
+
+    // ★ [추가] 원본 DICOM을 8-bit RGBA로 변환하는 Window/Level 필터
+    auto dicomColorMap = vtkSmartPointer<vtkImageMapToColors>::New();
+    dicomColorMap->SetInputConnection(reslice->GetOutputPort());
+    dicomColorMap->SetLookupTable(dicomLut);         // CT Window Width (밝기 범위)
+    dicomColorMap->SetOutputFormatToRGBA(); // 출력 포맷을 4채널(RGBA)로 고정
+
+
+    auto maskReslice = vtkSmartPointer<vtkImageReslice>::New();
+    maskReslice->SetInputData(maskData);
+    maskReslice->SetOutputDimensionality(2);
+    maskReslice->SetResliceAxes(resliceAxes);     // 원본과 완벽히 같은 행렬 사용
+    maskReslice->SetInterpolationModeToNearestNeighbor(); // 마스크는 보간하면 경계가 흐려지므로 Nearest 사용
+
+    // -------------------------------------------------------------
+    // 3. 마스크에 색상 및 투명도(Alpha) 맵핑
+    // -------------------------------------------------------------
+    auto lut = vtkSmartPointer<vtkLookupTable>::New();
+    lut->SetNumberOfTableValues(2);
+    lut->SetTableRange(0, 1);
+    lut->Build();
+    lut->SetTableValue(0, 0.0, 0.0, 0.0, 0.0); // 0: 완전히 투명 (Alpha 0)
+    lut->SetTableValue(1, 1.0, 0.0, 0.0, 0.6); // 1: 빨간색 (Alpha 0.6 = 60% 불투명)
+
+    auto colorMap = vtkSmartPointer<vtkImageMapToColors>::New();
+    colorMap->SetLookupTable(lut);
+    colorMap->SetInputConnection(maskReslice->GetOutputPort());
+    colorMap->SetOutputFormatToRGBA();
+
+    // -------------------------------------------------------------
+    // 4. 원본과 마스크 블렌딩 (겹치기)
+    // -------------------------------------------------------------
+    auto blend = vtkSmartPointer<vtkImageBlend>::New();
+    //blend->AddInputConnection(reslice->GetOutputPort()); // Background (Layer 0)
+    blend->AddInputConnection(colorMap->GetOutputPort());     // Foreground (Layer 1)
+	blend->AddInputConnection(dicomColorMap->GetOutputPort()); // Background (Layer 0)
+
+
+    auto maskActor = vtkSmartPointer<vtkImageActor>::New();
+    maskActor->GetMapper()->SetInputConnection(colorMap->GetOutputPort());
+
+    // ★ Z-fighting(두 영상이 같은 위치에서 깜빡이는 현상) 방지를 위해 마스크를 DICOM 바로 앞(Z+0.1)에 배치
+    maskActor->SetPosition(0, 0, 0.1);
+
+
+
     // 렌더러에 2D 액터로 올리기
     auto imageActor = vtkSmartPointer<vtkImageActor>::New();
-    imageActor->GetMapper()->SetInputConnection(reslice->GetOutputPort());
+    imageActor->GetMapper()->SetInputConnection(dicomColorMap->GetOutputPort());
 
     renderer->RemoveAllViewProps();
     renderer->AddActor(imageActor);
+    renderer->AddActor(maskActor);  // 2. 그 위에 반투명 빨간 마스크 얹기
     renderer->ResetCamera();
     renderWindow->Render();
 }

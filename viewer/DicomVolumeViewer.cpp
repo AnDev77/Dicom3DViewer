@@ -20,6 +20,10 @@
 
 #include <vtkWindowLevelLookupTable.h>
 
+#include <BrushInteractorStyle.h>
+
+#include <QLabel>
+ 
 
 DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     this->setWindowTitle("DICOM Series to 3D Volume Viewer");
@@ -47,7 +51,7 @@ DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
 	layout->addWidget(m_showButton);
     layout->addWidget(vtkWidget);
     
-this->setCentralWidget(centralWidget);
+    this->setCentralWidget(centralWidget);
 
     renderWindow = vtkSmartPointer<vtkGenericOpenGLRenderWindow>::New();
     vtkWidget->setRenderWindow(renderWindow);
@@ -126,48 +130,51 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
 
     renderer->RemoveAllViewProps();
     renderer->AddVolume(volume);
+
+    if (m_sharedMaskData) {
+        auto maskMapper = vtkSmartPointer<vtkSmartVolumeMapper>::New();
+        maskMapper->SetInputData(m_sharedMaskData);
+        qDebug() << "maskData setted";
+
+        // 마스크 전용 투명도 함수 (0은 투명, 1은 불투명)
+        auto maskOpacity = vtkSmartPointer<vtkPiecewiseFunction>::New();
+        maskOpacity->AddPoint(0.0, 0.0); // 배경(0)은 완전 투명
+        maskOpacity->AddPoint(1.0, 0.6); // 칠해진 영역(1)은 투명도 0.6으로 표시
+
+        // 마스크 전용 색상 함수 (예: 칠해진 영역을 선명한 빨간색으로 지정)
+        auto maskColor = vtkSmartPointer<vtkColorTransferFunction>::New();
+        maskColor->AddRGBPoint(0.0, 0.0, 0.0, 0.0);
+        maskColor->AddRGBPoint(1.0, 1.0, 0.0, 0.0); // Red (1.0, 0.0, 0.0)
+
+        auto maskProperty = vtkSmartPointer<vtkVolumeProperty>::New();
+        maskProperty->SetColor(maskColor);
+        maskProperty->SetScalarOpacity(maskOpacity);
+        maskProperty->SetShade(true);
+        maskProperty->SetInterpolationType(VTK_NEAREST_INTERPOLATION); // 마스크는 선형 보간보다는 계단식(Nearest)이 경계가 깔끔함
+
+        auto maskVolume = vtkSmartPointer<vtkVolume>::New();
+        maskVolume->SetMapper(maskMapper);
+        maskVolume->SetProperty(maskProperty);
+
+        renderer->AddVolume(maskVolume); // 3D 렌더러에 마스크 볼륨 레이어 추가
+    }
+
+
+
+
     renderer->ResetCamera();
+
+    // ★ 3D 전용 마우스 조작 스타일로 변경 (필수)
+    auto style3D = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
+    renderWindow->GetInteractor()->SetInteractorStyle(style3D);
+
+
     renderWindow->Render();
 };
 
 void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QString viewMode) {
     if (!imageData) return;
     auto reslice = vtkSmartPointer<vtkImageReslice>::New();
-    
-
-    // -------------------------------------------------------------
-    // [Step 1 테스트용]: 가짜 마스크 데이터 생성 (화면 중앙에 붉은 점 찍기)
-    // 실제 구현 시에는 이 부분을 MaskVolumeModel에서 받아오게 됩니다.
-    // -------------------------------------------------------------
-    auto maskData = vtkSmartPointer<vtkImageData>::New();
-    maskData->SetDimensions(imageData->GetDimensions());
-    maskData->SetSpacing(imageData->GetSpacing());
-    maskData->SetOrigin(imageData->GetOrigin());
-    maskData->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
-
-    // 전체를 0(배경)으로 초기화
-    memset(maskData->GetScalarPointer(), 0, maskData->GetNumberOfPoints() * sizeof(unsigned char));
-
-    // 정중앙 좌표 계산하여 반경 10픽셀 크기의 구(Sphere) 라벨(1) 칠하기
-    int dims[3];
-    maskData->GetDimensions(dims);
-    int cx = dims[0] / 2, cy = dims[1] / 2, cz = dims[2] / 2;
-    int radius = 10;
-    for (int z = cz - radius; z <= cz + radius; ++z) {
-        for (int y = cy - radius; y <= cy + radius; ++y) {
-            for (int x = cx - radius; x <= cx + radius; ++x) {
-                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz) <= radius * radius) {
-                    unsigned char* pixel = static_cast<unsigned char*>(maskData->GetScalarPointer(x, y, z));
-                    if (pixel) *pixel = 1; // 1번 라벨 부여
-                }
-            }
-        }
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-
-
-
     double center[3];
     imageData->GetCenter(center);
 
@@ -176,6 +183,28 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
 
     auto resliceAxes = vtkSmartPointer<vtkMatrix4x4>::New();
     resliceAxes->Identity();
+
+    // 만약 m_sharedMaskData가 없거나 크기가 다를 때만 최초 1회 생성
+    if (!m_sharedMaskData ||
+        m_sharedMaskData->GetDimensions()[0] != imageData->GetDimensions()[0]) {
+
+        m_sharedMaskData = vtkSmartPointer<vtkImageData>::New();
+        m_sharedMaskData->SetDimensions(imageData->GetDimensions());
+        m_sharedMaskData->SetSpacing(imageData->GetSpacing());
+        m_sharedMaskData->SetOrigin(imageData->GetOrigin());
+        m_sharedMaskData->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
+        memset(m_sharedMaskData->GetScalarPointer(), 0, m_sharedMaskData->GetNumberOfPoints() * sizeof(unsigned char));
+    }
+    
+    // 이후 기존 코드의 maskData 대신 m_sharedMaskData를 maskReslice에 연결합니다.
+    auto maskReslice = vtkSmartPointer<vtkImageReslice>::New();
+    maskReslice->SetInputData(m_sharedMaskData); // ★ 기존 maskData 대신 공유 마스크 연결
+    maskReslice->SetOutputDimensionality(2);
+    maskReslice->SetResliceAxes(resliceAxes);
+    maskReslice->SetInterpolationModeToNearestNeighbor();
+
+
+    
 
     // 뷰 모드에 따른 단면 지정 (행렬을 직접 안 건드리고 간단하게 조절 가능)
     if (viewMode.contains("Axial")) {
@@ -221,13 +250,6 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
     dicomColorMap->SetLookupTable(dicomLut);         // CT Window Width (밝기 범위)
     dicomColorMap->SetOutputFormatToRGBA(); // 출력 포맷을 4채널(RGBA)로 고정
 
-
-    auto maskReslice = vtkSmartPointer<vtkImageReslice>::New();
-    maskReslice->SetInputData(maskData);
-    maskReslice->SetOutputDimensionality(2);
-    maskReslice->SetResliceAxes(resliceAxes);     // 원본과 완벽히 같은 행렬 사용
-    maskReslice->SetInterpolationModeToNearestNeighbor(); // 마스크는 보간하면 경계가 흐려지므로 Nearest 사용
-
     // -------------------------------------------------------------
     // 3. 마스크에 색상 및 투명도(Alpha) 맵핑
     // -------------------------------------------------------------
@@ -237,7 +259,7 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
     lut->Build();
     lut->SetTableValue(0, 0.0, 0.0, 0.0, 0.0); // 0: 완전히 투명 (Alpha 0)
     lut->SetTableValue(1, 1.0, 0.0, 0.0, 0.6); // 1: 빨간색 (Alpha 0.6 = 60% 불투명)
-
+    
     auto colorMap = vtkSmartPointer<vtkImageMapToColors>::New();
     colorMap->SetLookupTable(lut);
     colorMap->SetInputConnection(maskReslice->GetOutputPort());
@@ -263,10 +285,28 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
     // 렌더러에 2D 액터로 올리기
     auto imageActor = vtkSmartPointer<vtkImageActor>::New();
     imageActor->GetMapper()->SetInputConnection(dicomColorMap->GetOutputPort());
+    imageActor->PickableOn(); // ★ 이 코드가 있어야 picker가 액터를 인식합니다.
+
 
     renderer->RemoveAllViewProps();
     renderer->AddActor(imageActor);
-    renderer->AddActor(maskActor);  // 2. 그 위에 반투명 빨간 마스크 얹기
+	renderer->AddActor(maskActor);  // 2. 그 위에 반투명 빨간 마스크 얹기
+
+    
+   // renderer->AddActor(maskActor);  // 2. 그 위에 반투명 빨간 마스크 얹기
     renderer->ResetCamera();
     renderWindow->Render();
+
+	m_currentImageData = imageData; // 현재 렌더링 중인 DICOM 데이터를 저장
+	m_currentResliceAxes = resliceAxes; // 현재 렌더링 중인 Reslice 행렬 저장  
+
+    auto brushStyle = vtkSmartPointer<BrushInteractorStyle>::New();
+    //brushStyle->SetDefaultRenderer(renderer);
+    brushStyle->SetImageData(m_currentImageData); // DICOM 메타데이터 참조용
+    brushStyle->SetResliceAxes(m_currentResliceAxes);   // 마스크 데이터 참조용
+	brushStyle->SetMaskData(m_sharedMaskData); // 마스크 데이터 참조용
+	//brushStyle->SetImageActor(imageActor); // 마스크 데이터 참조용
+    renderWindow->GetInteractor()->SetInteractorStyle(brushStyle); 
+
+
 }

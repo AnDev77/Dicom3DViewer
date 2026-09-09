@@ -7,6 +7,8 @@
 #include <vtkRenderer.h>
 #include <QVTKOpenGLNativeWidget.h>
 #include <QComboBox>
+#include <QMessageBox>
+#include <QLabel>
 
 class DicomVolumeViewer : public QMainWindow {
     Q_OBJECT
@@ -27,9 +29,12 @@ private:
     QPushButton* btnOpenDicom;
     QPushButton* m_showButton;       // 렌더링 실행 버튼
     QComboBox* m_viewComboBox;
-
     QVTKOpenGLNativeWidget* vtkWidget;
     vtkSmartPointer<vtkGenericOpenGLRenderWindow> renderWindow;
     vtkSmartPointer<vtkRenderer> renderer;
+    vtkSmartPointer<vtkMatrix4x4> m_currentResliceAxes; // 현재 뷰 모드의 Reslice 행렬
+    vtkSmartPointer<vtkImageData> m_currentImageData;
+
+    vtkSmartPointer<vtkImageData> m_sharedMaskData;
     
 };

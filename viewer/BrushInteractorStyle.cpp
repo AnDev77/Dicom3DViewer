@@ -135,31 +135,42 @@ void BrushInteractorStyle::PaintVoxels(int* voxelIndex) {
     // 2. 브러시 크기를 '복셀 개수'가 아닌 '물리적 mm 단위'로 지정합니다.
     double physicalRadius = 3.0; // 3.0mm 크기의 둥근 브러시
 
-    // 3. 탐색을 최적화하기 위해 탐색 범위(Loop range)를 복셀 단위로 역산합니다.
+    bool modified = false;
+
     int radiusI = std::ceil(physicalRadius / spacing[0]);
     int radiusJ = std::ceil(physicalRadius / spacing[1]);
     int radiusK = std::ceil(physicalRadius / spacing[2]);
 
-    bool modified = false;
+    // ★ 1. 마스크 데이터의 버퍼 시작 포인터와 슬라이스 크기를 미리 계산
+    unsigned char* basePtr = static_cast<unsigned char*>(m_maskData->GetScalarPointer());
+    if (!basePtr) return;
 
-    // 계산된 복셀 범위만큼만 순회
-    for (int k = centerK - radiusK; k <= centerK + radiusK; ++k) {
-        for (int j = centerJ - radiusJ; j <= centerJ + radiusJ; ++j) {
-            for (int i = centerI - radiusI; i <= centerI + radiusI; ++i) {
-                if (i >= 0 && i < dims[0] && j >= 0 && j < dims[1] && k >= 0 && k < dims[2]) {
+    int sliceSize = dims[0] * dims[1]; // Z축 1장당 복셀 개수
 
-                    // ★ 핵심: 인덱스 차이에 Spacing을 곱해 실제 물리적 거리(mm)를 구함
-                    double dx = (i - centerI) * spacing[0];
-                    double dy = (j - centerJ) * spacing[1];
-                    double dz = (k - centerK) * spacing[2];
+    // 탐색 범위 제한 (Bounding Box)
+    int minK = std::max(0, centerK - radiusK), maxK = std::min(dims[2] - 1, centerK + radiusK);
+    int minJ = std::max(0, centerJ - radiusJ), maxJ = std::min(dims[1] - 1, centerJ + radiusJ);
+    int minI = std::max(0, centerI - radiusI), maxI = std::min(dims[0] - 1, centerI + radiusI);
 
-                    // 물리적 거리의 제곱 합이 브러시 반경의 제곱보다 작거나 같으면 색칠
-                    if (dx * dx + dy * dy + dz * dz <= physicalRadius * physicalRadius) {
-                        unsigned char* pixel = static_cast<unsigned char*>(m_maskData->GetScalarPointer(i, j, k));
-                        if (pixel && *pixel != 1) {
-                            *pixel = 1;
-                            modified = true;
-                        }
+    for (int k = minK; k <= maxK; ++k) {
+        double dz = (k - centerK) * spacing[2];
+        double dz2 = dz * dz;
+        int kOffset = k * sliceSize;
+
+        for (int j = minJ; j <= maxJ; ++j) {
+            double dy = (j - centerJ) * spacing[1];
+            double dy2 = dy * dy;
+            int jOffset = j * dims[0];
+
+            for (int i = minI; i <= maxI; ++i) {
+                double dx = (i - centerI) * spacing[0];
+
+                if (dx * dx + dy2 + dz2 <= physicalRadius * physicalRadius) {
+                    // ★ 2. GetScalarPointer() 대신 1차원 인덱스 오프셋으로 직접 메모리 접근
+                    int index = i + jOffset + kOffset;
+                    if (basePtr[index] != 1) {
+                        basePtr[index] = 1;
+                        modified = true;
                     }
                 }
             }

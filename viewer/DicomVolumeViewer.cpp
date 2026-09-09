@@ -23,7 +23,7 @@
 #include <BrushInteractorStyle.h>
 
 #include <QLabel>
- 
+#include<vtkCamera.h>
 
 DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     this->setWindowTitle("DICOM Series to 3D Volume Viewer");
@@ -175,8 +175,10 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
 void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QString viewMode) {
     if (!imageData) return;
     auto reslice = vtkSmartPointer<vtkImageReslice>::New();
+
     double center[3];
     imageData->GetCenter(center);
+
 
     reslice->SetInputData(imageData);
     reslice->SetOutputDimensionality(2); // 출력을 2D로 고정
@@ -204,20 +206,22 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
     maskReslice->SetInterpolationModeToNearestNeighbor();
 
 
-    
-
     // 뷰 모드에 따른 단면 지정 (행렬을 직접 안 건드리고 간단하게 조절 가능)
     if (viewMode.contains("Axial")) {
         // Z축 고정 단면
         resliceAxes->SetElement(0, 0, 1); resliceAxes->SetElement(0, 1, 0); resliceAxes->SetElement(0, 2, 0);
         resliceAxes->SetElement(1, 0, 0); resliceAxes->SetElement(1, 1, 1); resliceAxes->SetElement(1, 2, 0);
         resliceAxes->SetElement(2, 0, 0); resliceAxes->SetElement(2, 1, 0); resliceAxes->SetElement(2, 2, 1);
+
+
     }
     else if (viewMode.contains("Coronal")) {
         // Y축 고정 단면
         resliceAxes->SetElement(0, 0, 1); resliceAxes->SetElement(0, 1, 0); resliceAxes->SetElement(0, 2, 0);
         resliceAxes->SetElement(1, 0, 0); resliceAxes->SetElement(1, 1, 0); resliceAxes->SetElement(1, 2, 1);
         resliceAxes->SetElement(2, 0, 0); resliceAxes->SetElement(2, 1, 1); resliceAxes->SetElement(2, 2, 0);
+
+
     }
     else if (viewMode.contains("Sagittal")) {
         // X축 고정 단면
@@ -292,21 +296,46 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
     renderer->AddActor(imageActor);
 	renderer->AddActor(maskActor);  // 2. 그 위에 반투명 빨간 마스크 얹기
 
+
+
+    vtkCamera* camera = renderer->GetActiveCamera();
+    camera->ParallelProjectionOn(); // 1. 2D 원근감 왜곡 제거 (직교 투영)
+
+    // 2D 이미지 액터의 중심점 계산
+    double bounds[6];
+    imageActor->GetBounds(bounds);
+    double centerX = (bounds[0] + bounds[1]) / 2.0;
+    double centerY = (bounds[2] + bounds[3]) / 2.0;
+
+    // 2D 평면(X-Y) 정면을 직각으로 바라보도록 카메라 위치 고정
+    camera->SetFocalPoint(centerX, centerY, 0.0);
+    camera->SetPosition(centerX, centerY, 1000.0); // Z축 위에서 수직으로 바라봄
+    camera->SetViewUp(0.0, 1.0, 0.0);             // 화면 상단을 +Y축 방향으로 고정
+
+    // 정면으로 배치된 상태에서 2D 이미지 크기에 맞게 줌(Zoom) 맞춤
+    renderer->ResetCamera();
     
    // renderer->AddActor(maskActor);  // 2. 그 위에 반투명 빨간 마스크 얹기
     renderer->ResetCamera();
     renderWindow->Render();
 
+
+
+
+
 	m_currentImageData = imageData; // 현재 렌더링 중인 DICOM 데이터를 저장
 	m_currentResliceAxes = resliceAxes; // 현재 렌더링 중인 Reslice 행렬 저장  
 
     auto brushStyle = vtkSmartPointer<BrushInteractorStyle>::New();
-    //brushStyle->SetDefaultRenderer(renderer);
+    brushStyle->SetDefaultRenderer(renderer);
     brushStyle->SetImageData(m_currentImageData); // DICOM 메타데이터 참조용
     brushStyle->SetResliceAxes(m_currentResliceAxes);   // 마스크 데이터 참조용
 	brushStyle->SetMaskData(m_sharedMaskData); // 마스크 데이터 참조용
-	//brushStyle->SetImageActor(imageActor); // 마스크 데이터 참조용
     renderWindow->GetInteractor()->SetInteractorStyle(brushStyle); 
+
+
+    renderWindow->Render();
+
 
 
 }

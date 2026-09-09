@@ -126,23 +126,38 @@ void BrushInteractorStyle::PaintVoxels(int* voxelIndex) {
 	int centerK = *(voxelIndex + 2);
 
 
-    int brushRadius = 3; // 브러시 크기 (복셀 단위)
+    // 1. 볼륨의 실제 물리적 간격(Spacing)을 가져옵니다.
+    double spacing[3];
+    m_maskData->GetSpacing(spacing);
     int dims[3];
     m_maskData->GetDimensions(dims);
 
+    // 2. 브러시 크기를 '복셀 개수'가 아닌 '물리적 mm 단위'로 지정합니다.
+    double physicalRadius = 3.0; // 3.0mm 크기의 둥근 브러시
+
+    // 3. 탐색을 최적화하기 위해 탐색 범위(Loop range)를 복셀 단위로 역산합니다.
+    int radiusI = std::ceil(physicalRadius / spacing[0]);
+    int radiusJ = std::ceil(physicalRadius / spacing[1]);
+    int radiusK = std::ceil(physicalRadius / spacing[2]);
+
     bool modified = false;
 
-    // 3D 공간 상에서 브러시 반경만큼 순회하며 칠하기
-    for (int k = centerK - brushRadius; k <= centerK + brushRadius; ++k) {
-        for (int j = centerJ - brushRadius; j <= centerJ + brushRadius; ++j) {
-            for (int i = centerI - brushRadius; i <= centerI + brushRadius; ++i) {
-                // 볼륨 전체 크기 범위를 벗어나지 않도록 체크
+    // 계산된 복셀 범위만큼만 순회
+    for (int k = centerK - radiusK; k <= centerK + radiusK; ++k) {
+        for (int j = centerJ - radiusJ; j <= centerJ + radiusJ; ++j) {
+            for (int i = centerI - radiusI; i <= centerI + radiusI; ++i) {
                 if (i >= 0 && i < dims[0] && j >= 0 && j < dims[1] && k >= 0 && k < dims[2]) {
-                    // 구(Sphere) 형태의 브러시 범위 계산
-                    if ((i - centerI) * (i - centerI) + (j - centerJ) * (j - centerJ) + (k - centerK) * (k - centerK) <= brushRadius * brushRadius) {
+
+                    // ★ 핵심: 인덱스 차이에 Spacing을 곱해 실제 물리적 거리(mm)를 구함
+                    double dx = (i - centerI) * spacing[0];
+                    double dy = (j - centerJ) * spacing[1];
+                    double dz = (k - centerK) * spacing[2];
+
+                    // 물리적 거리의 제곱 합이 브러시 반경의 제곱보다 작거나 같으면 색칠
+                    if (dx * dx + dy * dy + dz * dz <= physicalRadius * physicalRadius) {
                         unsigned char* pixel = static_cast<unsigned char*>(m_maskData->GetScalarPointer(i, j, k));
                         if (pixel && *pixel != 1) {
-                            *pixel = 1; // 1번 라벨(빨간색)로 변경
+                            *pixel = 1;
                             modified = true;
                         }
                     }

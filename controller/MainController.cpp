@@ -16,6 +16,7 @@ MainController::MainController( DicomVolumeViewer* viewer, QObject* parent)
 
 	connect(viewer->getComboBox(), &QComboBox::currentTextChanged, this, &MainController::onViewComboClicked);
 
+    connect(viewer->getBrushToggleBtn(), &QPushButton::toggled, this, &MainController::onToggle3DBrush);
 }
 
 void MainController::onOpenFolderClicked() {
@@ -32,6 +33,7 @@ void MainController::onOpenFolderClicked() {
             m_sharedVolumeData = volumeData; // 원본 데이터 보관
             //viewer->RenderVolume(m_sharedVolumeData); // 우선 기존 3D 뷰어로 렌더링 테스트
             viewer->getOpenButton()->setEnabled(true); // 버튼 복구
+           
             QMessageBox::information(viewer, "Success", "Asynchronous DICOM volume loading completed!");
         }
         else {
@@ -81,4 +83,17 @@ void MainController::onShowButtonClicked() {
     }
 
     viewer->RenderVolume(m_sharedVolumeData);
+}
+
+
+void MainController::onToggle3DBrush() {
+    if (!m_sharedVolumeData) {
+        QMessageBox::warning(viewer, "Warning", "Load DICOM folder first!");
+        // 데이터가 없을 때 체크가 켜지는 것을 방지하려면 버튼 상태를 되돌릴 수 있습니다.
+        viewer->getBrushToggleBtn()->setChecked(false);
+        return;
+    }
+
+    // 뷰어 내부의 토글 함수 호출 (볼륨 데이터와 렌더러 정보를 함께 전달)
+    viewer->ToggleBrushMode();
 }

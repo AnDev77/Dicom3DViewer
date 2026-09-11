@@ -38,19 +38,21 @@ DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     m_showButton = new QPushButton("Show Volume", this);
     
     m_viewComboBox = new QComboBox(this);
-
     m_viewComboBox->addItem("Axial");
     m_viewComboBox->addItem("Coronal");
     m_viewComboBox->addItem("Sagittal");
     vtkWidget = new QVTKOpenGLNativeWidget(this);
 
+    m_brushToggleBtn = new QPushButton("3D Brush Mode", this);
+    m_brushToggleBtn->setCheckable(true);
+    m_brushToggleBtn->setFixedHeight(40);
 
     layout->addWidget(btnOpenDicom);
     
     layout->addWidget(m_viewComboBox);
 	layout->addWidget(m_showButton);
     layout->addWidget(vtkWidget);
-    
+    layout->addWidget(m_brushToggleBtn);
     this->setCentralWidget(centralWidget);
 
     renderWindow = vtkSmartPointer<vtkGenericOpenGLRenderWindow>::New();
@@ -59,6 +61,7 @@ DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     renderer = vtkSmartPointer<vtkRenderer>::New();
     renderer->SetBackground(0.2, 0.2, 0.2);
     renderWindow->AddRenderer(renderer);
+    InitInteractor();
 
 }
 
@@ -76,6 +79,7 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
 
     auto volumeMapper = vtkSmartPointer<vtkSmartVolumeMapper>::New();
     volumeMapper->SetInputData(imageData);
+    m_currentImageData = imageData;
     // ==========================================
     // 1. 투명도 전달 함수 (Opacity Transfer Function)
     // ==========================================
@@ -127,6 +131,8 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     volumeMapper->SetSampleDistance(volumeMapper->GetSampleDistance() * 0.5);
     volume->SetMapper(volumeMapper);
     volume->SetProperty(volumeProperty);
+    m_volume = volume;
+
 
     renderer->RemoveAllViewProps();
     renderer->AddVolume(volume);
@@ -165,9 +171,11 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     renderer->ResetCamera();
 
     // ★ 3D 전용 마우스 조작 스타일로 변경 (필수)
-    auto style3D = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
-    renderWindow->GetInteractor()->SetInteractorStyle(style3D);
+    m_brushStyle->SetVolumeData(m_currentImageData);
 
+    // 기본 상태를 일반 회전 모드(Normal Style)로 설정
+    m_brushToggleBtn->setChecked(false); // UI 버튼 상태 초기화
+    renderWindow->GetInteractor()->SetInteractorStyle(m_normalStyle);
 
     renderWindow->Render();
 };
@@ -334,8 +342,58 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
     renderWindow->GetInteractor()->SetInteractorStyle(brushStyle); 
 
 
+    if (m_brushStyle) {
+        m_brushStyle->SetVolumeData(m_currentImageData);
+        m_brushStyle->SetMaskData(m_sharedMaskData); // 이 함수가 BrushInteractorStyle에 구현되어 있어야 합니다!
+    }
+
     renderWindow->Render();
 
 
 
 }
+void DicomVolumeViewer::InitInteractor() {
+
+    m_interactor = renderWindow->GetInteractor();
+    if (!m_interactor) {
+        qDebug() << "Error: Interactor is not initialized!";
+        return;
+    }
+    m_normalStyle = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
+    m_brushStyle = vtkSmartPointer<VolumeBrushInteractorStyle>::New();
+
+    // 기본 모드를 일반 회전 모드로 세팅
+    m_interactor->SetInteractorStyle(m_normalStyle);
+}
+
+void DicomVolumeViewer::ToggleBrushMode() {
+    if (!m_interactor) return;
+
+    if (!isBrushMode) {
+        // 3D 브러시 모드 켜기
+        if (!m_currentImageData) {
+            qDebug() << "[Warning] m_currentImageData is null! Please load and show volume first.";
+            // 버튼 체크 상태를 강제로 원복
+            if (m_brushToggleBtn) m_brushToggleBtn->setChecked(false);
+            return;
+        }
+
+        m_brushStyle->SetDefaultRenderer(renderer);
+        m_brushStyle->SetVolumeData(m_currentImageData);
+        isBrushMode = true;
+        m_interactor->SetInteractorStyle(m_brushStyle);
+        m_brushStyle->SetMaskData(m_sharedMaskData);
+        qDebug() << ">> Changed to 3D Brush Mode";
+    }
+    else {
+        // 일반 회전 모드 켜기
+        m_normalStyle->SetDefaultRenderer(renderer);
+        m_interactor->SetInteractorStyle(m_normalStyle);
+        m_brushStyle->SetMaskData(m_sharedMaskData);
+
+        isBrushMode = false;
+        qDebug() << ">> Changed to Normal Mode";
+    }
+    m_interactor->Render();
+}
+

@@ -35,6 +35,11 @@ DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     btnOpenDicom = new QPushButton("DICOM open folder", this);
     btnOpenDicom -> setFixedHeight(40);
     
+
+
+
+
+
     m_showButton = new QPushButton("Show Volume", this);
     
     m_viewComboBox = new QComboBox(this);
@@ -137,6 +142,10 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     renderer->RemoveAllViewProps();
     renderer->AddVolume(volume);
 
+   
+
+
+
     if (m_sharedMaskData) {
         auto maskMapper = vtkSmartPointer<vtkSmartVolumeMapper>::New();
         maskMapper->SetInputData(m_sharedMaskData);
@@ -166,7 +175,16 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     }
 
 
+    if (!m_sharedMaskData ||
+        m_sharedMaskData->GetDimensions()[0] != imageData->GetDimensions()[0]) {
 
+        m_sharedMaskData = vtkSmartPointer<vtkImageData>::New();
+        m_sharedMaskData->SetDimensions(imageData->GetDimensions());
+        m_sharedMaskData->SetSpacing(imageData->GetSpacing());
+        m_sharedMaskData->SetOrigin(imageData->GetOrigin());
+        m_sharedMaskData->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
+        memset(m_sharedMaskData->GetScalarPointer(), 0, m_sharedMaskData->GetNumberOfPoints() * sizeof(unsigned char));
+    }
 
     renderer->ResetCamera();
 
@@ -195,16 +213,7 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
     resliceAxes->Identity();
 
     // 만약 m_sharedMaskData가 없거나 크기가 다를 때만 최초 1회 생성
-    if (!m_sharedMaskData ||
-        m_sharedMaskData->GetDimensions()[0] != imageData->GetDimensions()[0]) {
-
-        m_sharedMaskData = vtkSmartPointer<vtkImageData>::New();
-        m_sharedMaskData->SetDimensions(imageData->GetDimensions());
-        m_sharedMaskData->SetSpacing(imageData->GetSpacing());
-        m_sharedMaskData->SetOrigin(imageData->GetOrigin());
-        m_sharedMaskData->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
-        memset(m_sharedMaskData->GetScalarPointer(), 0, m_sharedMaskData->GetNumberOfPoints() * sizeof(unsigned char));
-    }
+   
     
     // 이후 기존 코드의 maskData 대신 m_sharedMaskData를 maskReslice에 연결합니다.
     auto maskReslice = vtkSmartPointer<vtkImageReslice>::New();

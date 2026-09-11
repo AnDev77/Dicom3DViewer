@@ -149,7 +149,9 @@ void VolumeBrushInteractorStyle::PaintVoxels(int* voxelIndex) {
                 if (dx * dx + dy2 + dz2 <= physicalRadius * physicalRadius) {
                     // ★ 2. GetScalarPointer() 대신 1차원 인덱스 오프셋으로 직접 메모리 접근
                     int index = i + jOffset + kOffset;
-                    if (basePtr[index] != 1) {
+                    short huValue = m_imageData->GetScalarComponentAsDouble(i, j, k, 0);
+                    
+                    if (basePtr[index] != 1 && huValue >= 200) {
                         basePtr[index] = 1;
                         modified = true;
                     }

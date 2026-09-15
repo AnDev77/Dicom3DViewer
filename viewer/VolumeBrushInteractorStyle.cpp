@@ -4,8 +4,8 @@
 #include <vtkRenderer.h>
 #include <QDebug> // Qt 환경 가정 (필요에 따라 std::cout으로 변경)
 #include<vtkRenderWindow.h>
-
-
+#include<vtkPointData.h>
+#include<vtkDataArray.h>
 vtkStandardNewMacro(VolumeBrushInteractorStyle);
 
 VolumeBrushInteractorStyle::VolumeBrushInteractorStyle() {
@@ -40,17 +40,26 @@ void VolumeBrushInteractorStyle::OnLeftButtonUp() {
    // }
 
    //return;
+    if (m_maskData) {
+        
+        if (this->Interactor) {
+            this->Interactor->Render(); // 3D 화면 갱신
+        }
+    }
 
 }
 
 void VolumeBrushInteractorStyle::OnLeftButtonDown() {
-    int* pos = this->GetInteractor()->GetEventPosition();
     isDrawing = true;
     int* voxels = new int[3];
     if (GetVoxels(voxels)) {
         qDebug() << "  -> Converted Voxel Index: (" << voxels[0] << "," << voxels[1] << "," << voxels[2] << ")";
         PaintVoxels(voxels);
+        //m_maskData->GetPointData()->GetScalars()->Modified(); // 이걸 해줘야 매퍼가 인식을 하는데 원인을 아직 모르겠음
+
     }
+
+
 
     // ★ 중요: 부모 클래스의 OnLeftButtonDown()을 호출하지 않음으로써 화면 회전을 막습니다.
     // vtkInteractorStyleTrackballCamera::OnLeftButtonDown(); 
@@ -80,19 +89,19 @@ bool VolumeBrushInteractorStyle::GetVoxels(int * voxels) {
         voxels[0] = voxelX;
         voxels[1] = voxelY;
         voxels[2] = voxelZ;
-        qDebug() << "[3D Brush Mode in Volume";
-        qDebug() << "  -> Converted Voxel Index: (" << voxels[0] << "," << voxels[1] << "," << voxels[2] << ")";
+       
         if (voxelX < 0 || voxelX >= dims[0] ||
             voxelY < 0 || voxelY >= dims[1] ||
             voxelZ < 0 || voxelZ >= dims[2]) {
 
-            qDebug() << "[3D Brush Mode out  Volume";
+            
             return false;
         }
         else {
             return true;
         }
     }
+    qDebug() << "Fail to Picker";
     return false;
 
 }
@@ -154,7 +163,10 @@ void VolumeBrushInteractorStyle::PaintVoxels(int* voxelIndex) {
                     if (basePtr[index] != 1 && huValue >= 200) {
                         basePtr[index] = 1;
                         modified = true;
+                        //m_maskData->Modified();
+
                     }
+
                 }
             }
         }
@@ -163,15 +175,26 @@ void VolumeBrushInteractorStyle::PaintVoxels(int* voxelIndex) {
     if (modified) {
         // VTK 파이프라인에 데이터가 수정되었음을 알림
         m_maskData->Modified();
+        if (!firstDraw) {
+            m_maskData->GetPointData()->GetScalars()->Modified();
+            firstDraw = true;
 
-        qDebug() << "[Brush Success] Painted";
+        };
+        if (this->Interactor) {
+            this->Interactor->Render();
 
-        // 2D 렌더윈도우 즉시 갱신
-        if (this->GetDefaultRenderer()) {
+        }
+        //m_maskData->GetPointData()->Modified();
+
+
+        /*if (this->GetDefaultRenderer()) {
             this->GetDefaultRenderer()->GetRenderWindow()->Render();
+            qDebug() << "[Brush Success] Painted";
+
         }
         else if (this->GetInteractor() && this->GetInteractor()->GetRenderWindow()) {
             this->GetInteractor()->GetRenderWindow()->Render();
-        }
+        }*/
+
     }
 }

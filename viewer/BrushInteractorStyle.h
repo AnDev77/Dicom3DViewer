@@ -8,6 +8,7 @@
 #include <vtkRenderWindowInteractor.h>
 #include <vtkRenderer.h>
 #include <QDebug>
+#include <vtkMatrix4x4.h>
 
 class BrushInteractorStyle : public vtkInteractorStyleImage {
 public:
@@ -15,9 +16,13 @@ public:
     vtkTypeMacro(BrushInteractorStyle, vtkInteractorStyleImage);
 
     void SetImageData(vtkSmartPointer<vtkImageData> imageData) { m_imageData = imageData; }
-    void SetResliceAxes(vtkSmartPointer<vtkMatrix4x4> axes) { m_resliceAxes = axes; }
+
 	void PaintVoxels(int* voxelIndex);
 	void SetMaskData(vtkSmartPointer<vtkImageData> maskData) { m_maskData = maskData; }
+    void SetResliceAxes(vtkSmartPointer<vtkMatrix4x4> axes) { m_resliceAxes = axes; }
+
+
+
     virtual void OnLeftButtonDown() override;
     virtual void OnMouseMove() override;
     virtual void OnLeftButtonUp() override;

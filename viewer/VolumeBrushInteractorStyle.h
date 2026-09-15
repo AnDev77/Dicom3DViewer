@@ -25,4 +25,5 @@ private:
     vtkSmartPointer<vtkImageData>m_maskData;
     vtkSmartPointer<vtkVolumePicker> m_picker;
     bool isDrawing = false;
+    bool firstDraw = false;
 };

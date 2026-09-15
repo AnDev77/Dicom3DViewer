@@ -181,7 +181,7 @@ void BrushInteractorStyle::PaintVoxels(int* voxelIndex) {
         // VTK 파이프라인에 데이터가 수정되었음을 알림
         m_maskData->Modified();
 
-        // 2D 렌더윈도우 즉시 갱신
+        // 현재의 렌더윈도우 즉시 갱신
         if (this->GetDefaultRenderer()) {
             this->GetDefaultRenderer()->GetRenderWindow()->Render();
         }

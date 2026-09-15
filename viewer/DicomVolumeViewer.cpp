@@ -11,19 +11,21 @@
 #include <vtkImageSlice.h>
 #include <vtkImageActor.h>
 #include<vtkMatrix4x4.h>
-
+#include<vtkImageData.h>
+#include<vtkPointData.h>
 
 //브러시 도입을 위한 헤더 추가   
 #include <vtkImageBlend.h>
 #include <vtkImageMapToColors.h>
 #include <vtkLookupTable.h>
-
+#include<vtkTrivialProducer.h>
 #include <vtkWindowLevelLookupTable.h>
-
-#include <BrushInteractorStyle.h>
+#include<vtkDataSetAttributes.h>
+#include "BrushInteractorStyle.h"
 
 #include <QLabel>
 #include<vtkCamera.h>
+
 
 DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     this->setWindowTitle("DICOM Series to 3D Volume Viewer");
@@ -34,10 +36,6 @@ DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
 
     btnOpenDicom = new QPushButton("DICOM open folder", this);
     btnOpenDicom -> setFixedHeight(40);
-    
-
-
-
 
 
     m_showButton = new QPushButton("Show Volume", this);
@@ -66,6 +64,9 @@ DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     renderer = vtkSmartPointer<vtkRenderer>::New();
     renderer->SetBackground(0.2, 0.2, 0.2);
     renderWindow->AddRenderer(renderer);
+
+
+
     InitInteractor();
 
 }
@@ -84,7 +85,7 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
 
     auto volumeMapper = vtkSmartPointer<vtkSmartVolumeMapper>::New();
     volumeMapper->SetInputData(imageData);
-    m_currentImageData = imageData;
+    if(!m_currentImageData) m_currentImageData = imageData;
     // ==========================================
     // 1. 투명도 전달 함수 (Opacity Transfer Function)
     // ==========================================
@@ -138,43 +139,98 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     volume->SetProperty(volumeProperty);
     m_volume = volume;
 
-
     renderer->RemoveAllViewProps();
-    renderer->AddVolume(volume);
 
-   
+    if (!m_sharedMaskData ||
+        m_sharedMaskData->GetDimensions()[0] != imageData->GetDimensions()[0]) {
+
+        m_sharedMaskData = vtkSmartPointer<vtkImageData>::New();
+        m_sharedMaskData->DeepCopy(imageData);
 
 
+        m_sharedMaskData->SetSpacing(imageData->GetSpacing());
+        m_sharedMaskData->SetOrigin(imageData->GetOrigin());
+        m_sharedMaskData->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
+        
 
-    if (m_sharedMaskData) {
-        auto maskMapper = vtkSmartPointer<vtkSmartVolumeMapper>::New();
-        maskMapper->SetInputData(m_sharedMaskData);
-        qDebug() << "maskData setted";
+        unsigned char* ptr = static_cast<unsigned char*>(m_sharedMaskData->GetScalarPointer());
+        memset(ptr, 0, m_sharedMaskData->GetNumberOfPoints() * sizeof(unsigned char));
 
-        // 마스크 전용 투명도 함수 (0은 투명, 1은 불투명)
-        auto maskOpacity = vtkSmartPointer<vtkPiecewiseFunction>::New();
-        maskOpacity->AddPoint(0.0, 0.0); // 배경(0)은 완전 투명
-        maskOpacity->AddPoint(1.0, 0.6); // 칠해진 영역(1)은 투명도 0.6으로 표시
+        // ★ [핵심 FIX] GPU Mapper가 VRAM 텍스처 버퍼를 스킵하지 않도록 
+        // 첫 복셀에 임시값을 찍어 Scalar Range가 [0, 1]을 인식하도록 강제 유도
+        ptr[0] = 1;
+        m_sharedMaskData->Modified();
+        m_sharedMaskData->GetScalarRange(); // Range [0, 1] 바인딩 유도
+        ptr[0] = 0; // 다시 원상복구
+        m_sharedMaskData->Modified();
 
-        // 마스크 전용 색상 함수 (예: 칠해진 영역을 선명한 빨간색으로 지정)
-        auto maskColor = vtkSmartPointer<vtkColorTransferFunction>::New();
-        maskColor->AddRGBPoint(0.0, 0.0, 0.0, 0.0);
-        maskColor->AddRGBPoint(1.0, 1.0, 0.0, 0.0); // Red (1.0, 0.0, 0.0)
 
-        auto maskProperty = vtkSmartPointer<vtkVolumeProperty>::New();
-        maskProperty->SetColor(maskColor);
-        maskProperty->SetScalarOpacity(maskOpacity);
-        maskProperty->SetShade(true);
-        maskProperty->SetInterpolationType(VTK_NEAREST_INTERPOLATION); // 마스크는 선형 보간보다는 계단식(Nearest)이 경계가 깔끔함
-
-        auto maskVolume = vtkSmartPointer<vtkVolume>::New();
-        maskVolume->SetMapper(maskMapper);
-        maskVolume->SetProperty(maskProperty);
-
-        renderer->AddVolume(maskVolume); // 3D 렌더러에 마스크 볼륨 레이어 추가
     }
 
+    m_sharedMaskData->GetPointData()->GetScalars()->Modified();
 
+    //auto maskProducer = vtkSmartPointer<vtkTrivialProducer>::New();
+    //maskProducer->SetOutput(m_sharedMaskData);
+    //maskProducer->Update(); // 파이프라인 정보 강제 빌드
+
+    auto maskMapper = vtkSmartPointer<vtkSmartVolumeMapper>::New();
+
+    // SetInputData(m_sharedMaskData) 대신, Producer의 OutputPort를 연결
+//    maskMapper->SetInputConnection(maskProducer->GetOutputPort());
+    maskMapper->SetInputData(m_sharedMaskData);
+    maskMapper->SetRequestedRenderModeToGPU();
+    maskMapper->Update();
+   
+
+    // 마스크 전용 투명도 함수 (0은 투명, 1은 불투명)
+    auto maskOpacity = vtkSmartPointer<vtkPiecewiseFunction>::New();
+    maskOpacity->AddPoint(0.0, 0.0); // 배경(0)은 완전 투명
+    maskOpacity->AddPoint(1.0, 0.3); // 칠해진 영역(1)은 투명도 0.6으로 표시
+
+    // 마스크 전용 색상 함수 (예: 칠해진 영역을 선명한 빨간색으로 지정)
+    auto maskColor = vtkSmartPointer<vtkColorTransferFunction>::New();
+    maskColor->AddRGBPoint(0.0, 0.0, 0.0, 0.0);
+    maskColor->AddRGBPoint(1.0, 1.0, 0.0, 0.0); // Red (1.0, 0.0, 0.0)
+
+    auto maskProperty = vtkSmartPointer<vtkVolumeProperty>::New();
+    maskProperty->SetColor(maskColor);
+    maskProperty->SetScalarOpacity(maskOpacity);
+    maskProperty->SetShade(true);
+    maskProperty->SetAmbient(1.0);
+    maskProperty->SetInterpolationType(VTK_NEAREST_INTERPOLATION); // 마스크는 선형 보간보다는 계단식(Nearest)이 경계가 깔끔함
+
+    auto maskVolume = vtkSmartPointer<vtkVolume>::New();
+    maskVolume->SetMapper(maskMapper);
+    maskVolume->SetProperty(maskProperty);
+
+
+
+
+    renderer->AddVolume(volume);
+
+    renderer->AddVolume(maskVolume); // 3D 렌더러에 마스크 볼륨 레이어 추가
+
+        // RenderVolume() 내부 maskVolume 생성 직후
+    qDebug() << "[TRACE] Mask Data Check";
+    qDebug() << "  -> m_sharedMaskData MTime:" << m_sharedMaskData->GetMTime();
+    qDebug() << "  -> maskMapper MTime:" << maskMapper->GetMTime();
+
+    
+    qDebug() << "[TRACE Test] Only maskVolume added to Renderer. Volumes count:"
+        << renderer->GetVolumes()->GetNumberOfItems();
+    renderer->ResetCamera();
+    renderWindow->Render();
+
+    SetInteractionMode(InteractionMode::Normal);
+
+};
+
+void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QString viewMode) {
+    if (!imageData) return;
+    auto reslice = vtkSmartPointer<vtkImageReslice>::New();
+
+    
+    if (!m_currentImageData) m_currentImageData = imageData;
     if (!m_sharedMaskData ||
         m_sharedMaskData->GetDimensions()[0] != imageData->GetDimensions()[0]) {
 
@@ -184,29 +240,14 @@ void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
         m_sharedMaskData->SetOrigin(imageData->GetOrigin());
         m_sharedMaskData->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
         memset(m_sharedMaskData->GetScalarPointer(), 0, m_sharedMaskData->GetNumberOfPoints() * sizeof(unsigned char));
+        qDebug() << "maskData setted";
+
+
     }
-
-    renderer->ResetCamera();
-
-    // ★ 3D 전용 마우스 조작 스타일로 변경 (필수)
-    m_brushStyle->SetVolumeData(m_currentImageData);
-
-    // 기본 상태를 일반 회전 모드(Normal Style)로 설정
-    m_brushToggleBtn->setChecked(false); // UI 버튼 상태 초기화
-    renderWindow->GetInteractor()->SetInteractorStyle(m_normalStyle);
-
-    renderWindow->Render();
-};
-
-void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QString viewMode) {
-    if (!imageData) return;
-    auto reslice = vtkSmartPointer<vtkImageReslice>::New();
 
     double center[3];
     imageData->GetCenter(center);
-
-
-    reslice->SetInputData(imageData);
+    reslice->SetInputData(m_currentImageData);
     reslice->SetOutputDimensionality(2); // 출력을 2D로 고정
 
     auto resliceAxes = vtkSmartPointer<vtkMatrix4x4>::New();
@@ -217,7 +258,7 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
     
     // 이후 기존 코드의 maskData 대신 m_sharedMaskData를 maskReslice에 연결합니다.
     auto maskReslice = vtkSmartPointer<vtkImageReslice>::New();
-    maskReslice->SetInputData(m_sharedMaskData); // ★ 기존 maskData 대신 공유 마스크 연결
+    maskReslice->SetInputData(m_sharedMaskData);
     maskReslice->SetOutputDimensionality(2);
     maskReslice->SetResliceAxes(resliceAxes);
     maskReslice->SetInterpolationModeToNearestNeighbor();
@@ -331,33 +372,10 @@ void DicomVolumeViewer::RenderSlice(vtkSmartPointer<vtkImageData> imageData, QSt
 
     // 정면으로 배치된 상태에서 2D 이미지 크기에 맞게 줌(Zoom) 맞춤
     renderer->ResetCamera();
-    
-   // renderer->AddActor(maskActor);  // 2. 그 위에 반투명 빨간 마스크 얹기
-    renderer->ResetCamera();
-    renderWindow->Render();
-
-
-
-
-
-	m_currentImageData = imageData; // 현재 렌더링 중인 DICOM 데이터를 저장
 	m_currentResliceAxes = resliceAxes; // 현재 렌더링 중인 Reslice 행렬 저장  
 
-    auto brushStyle = vtkSmartPointer<BrushInteractorStyle>::New();
-    brushStyle->SetDefaultRenderer(renderer);
-    brushStyle->SetImageData(m_currentImageData); // DICOM 메타데이터 참조용
-    brushStyle->SetResliceAxes(m_currentResliceAxes);   // 마스크 데이터 참조용
-	brushStyle->SetMaskData(m_sharedMaskData); // 마스크 데이터 참조용
-    renderWindow->GetInteractor()->SetInteractorStyle(brushStyle); 
-
-
-    if (m_brushStyle) {
-        m_brushStyle->SetVolumeData(m_currentImageData);
-        m_brushStyle->SetMaskData(m_sharedMaskData); // 이 함수가 BrushInteractorStyle에 구현되어 있어야 합니다!
-    }
-
     renderWindow->Render();
-
+    SetInteractionMode(InteractionMode::Brush2D);
 
 
 }
@@ -369,40 +387,84 @@ void DicomVolumeViewer::InitInteractor() {
         return;
     }
     m_normalStyle = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
-    m_brushStyle = vtkSmartPointer<VolumeBrushInteractorStyle>::New();
+    m_brush3DStyle = vtkSmartPointer<VolumeBrushInteractorStyle>::New();
+    m_brush2DStyle = vtkSmartPointer<BrushInteractorStyle> ::New();
+
 
     // 기본 모드를 일반 회전 모드로 세팅
     m_interactor->SetInteractorStyle(m_normalStyle);
 }
 
-void DicomVolumeViewer::ToggleBrushMode() {
-    if (!m_interactor) return;
+void DicomVolumeViewer::SyncStyleData() {
 
-    if (!isBrushMode) {
-        // 3D 브러시 모드 켜기
+
+    if (m_brush3DStyle) {
+        qDebug() << "sucess to sync 3d";
+        m_brush3DStyle->SetDefaultRenderer(renderer);
+        m_brush3DStyle->SetVolumeData(m_currentImageData);
+        m_brush3DStyle->SetMaskData(m_sharedMaskData);
+       
+    }
+    if (m_brush2DStyle) {
+        m_brush2DStyle->SetDefaultRenderer(renderer);
+        m_brush2DStyle->SetImageData(m_currentImageData);
+
+        m_brush2DStyle->SetResliceAxes(m_currentResliceAxes);
+        m_brush2DStyle->SetMaskData(m_sharedMaskData);
+    }
+}
+
+void DicomVolumeViewer::SetInteractionMode(InteractionMode mode) {
+    if (!m_interactor) return;
+    m_currentMode = mode;
+    SyncStyleData();
+
+    if (renderWindow) {
+        renderWindow->Render(); // ★ 모드 전환 시 3D 파이프라인 즉시 Flush
+        qDebug() << "render at SET";
+    }
+
+    switch (m_currentMode) {
+    case InteractionMode::Normal:
+        m_interactor->SetInteractorStyle(m_normalStyle);
+        if (m_brushToggleBtn) {
+            m_brushToggleBtn->blockSignals(true);   // 시그널 임시 차단
+            m_brushToggleBtn->setChecked(false);  // 버튼 상태 초기화
+            m_brushToggleBtn->blockSignals(false);  // 시그널 차단 해제
+            qDebug() << "SET TO NORMAL";
+
+        }        break;
+    case InteractionMode::Brush3D:
         if (!m_currentImageData) {
-            qDebug() << "[Warning] m_currentImageData is null! Please load and show volume first.";
-            // 버튼 체크 상태를 강제로 원복
-            if (m_brushToggleBtn) m_brushToggleBtn->setChecked(false);
+            SetInteractionMode(InteractionMode::Normal);
             return;
         }
+        m_interactor->SetInteractorStyle(m_brush3DStyle);
+        if (m_brushToggleBtn) m_brushToggleBtn->setChecked(true);
+        qDebug() << "SET TO 3D";
 
-        m_brushStyle->SetDefaultRenderer(renderer);
-        m_brushStyle->SetVolumeData(m_currentImageData);
-        isBrushMode = true;
-        m_interactor->SetInteractorStyle(m_brushStyle);
-        m_brushStyle->SetMaskData(m_sharedMaskData);
-        qDebug() << ">> Changed to 3D Brush Mode";
-    }
-    else {
-        // 일반 회전 모드 켜기
-        m_normalStyle->SetDefaultRenderer(renderer);
-        m_interactor->SetInteractorStyle(m_normalStyle);
-        m_brushStyle->SetMaskData(m_sharedMaskData);
+        break;
+    case InteractionMode::Brush2D:
+        m_interactor->SetInteractorStyle(m_brush2DStyle);
+        qDebug() << "SET TO 2D";
 
-        isBrushMode = false;
-        qDebug() << ">> Changed to Normal Mode";
+        break;
     }
-    m_interactor->Render();
+    renderWindow->Render();
 }
+
+
+
+void DicomVolumeViewer::ToggleBrushMode() {
+    if (m_currentMode == InteractionMode::Normal) {
+        SetInteractionMode(InteractionMode::Brush3D);
+    }
+    else if(m_currentMode==InteractionMode::Brush3D) {
+        SetInteractionMode(InteractionMode::Normal);
+        }
+    else {
+        SetInteractionMode(InteractionMode::Brush2D);
+    }
+}
+
 

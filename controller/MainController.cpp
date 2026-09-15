@@ -33,7 +33,8 @@ void MainController::onOpenFolderClicked() {
             m_sharedVolumeData = volumeData; // 원본 데이터 보관
             //viewer->RenderVolume(m_sharedVolumeData); // 우선 기존 3D 뷰어로 렌더링 테스트
             viewer->getOpenButton()->setEnabled(true); // 버튼 복구
-           
+            viewer->SetImageData(volumeData);
+
             QMessageBox::information(viewer, "Success", "Asynchronous DICOM volume loading completed!");
         }
         else {

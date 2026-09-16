@@ -17,6 +17,7 @@ public:
     virtual void OnLeftButtonDown() override;
     void OnLeftButtonUp() override;
     bool GetVoxels(int* voxels);
+    void SetFirstDraw() { firstDraw = false; }
 private:
     VolumeBrushInteractorStyle();
     ~VolumeBrushInteractorStyle() = default;

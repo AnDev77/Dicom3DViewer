@@ -21,7 +21,7 @@ public:
 	void SetMaskData(vtkSmartPointer<vtkImageData> maskData) { m_maskData = maskData; }
     void SetResliceAxes(vtkSmartPointer<vtkMatrix4x4> axes) { m_resliceAxes = axes; }
 
-
+    void SetImageDate(vtkSmartPointer<vtkImageData> data) { m_imageData = data; }
 
     virtual void OnLeftButtonDown() override;
     virtual void OnMouseMove() override;

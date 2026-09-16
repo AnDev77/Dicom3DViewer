@@ -32,11 +32,12 @@ public:
     QString getSelectedViewMode() const;
     QPushButton* getBrushToggleBtn() { return m_brushToggleBtn; }
     void SetInteractionMode(InteractionMode mode); // 인터렉티브 모드 전환
-    void SetImageData(vtkSmartPointer<vtkImageData> data) { m_currentImageData = data; } // 인터렉티브 모드 전환
 
+    void InitMaskData() { m_sharedMaskData = nullptr; }
     void RenderVolume(vtkSmartPointer<vtkImageData> imageData);
     void RenderSlice(vtkSmartPointer<vtkImageData> imageData, QString viewMode); // ★ 2D 단면 렌더링 함수 신규 추가
     void ToggleBrushMode(); // UI 토글 버튼 시그널과 연결
+    void SetImageData(vtkSmartPointer<vtkImageData> data) { m_currentImageData = data; }
 
 
 private:

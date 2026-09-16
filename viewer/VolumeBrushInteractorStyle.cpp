@@ -9,6 +9,7 @@
 vtkStandardNewMacro(VolumeBrushInteractorStyle);
 
 VolumeBrushInteractorStyle::VolumeBrushInteractorStyle() {
+   
     m_picker = vtkSmartPointer<vtkVolumePicker>::New();
 
 }
@@ -83,9 +84,15 @@ bool VolumeBrushInteractorStyle::GetVoxels(int * voxels) {
         m_imageData->GetSpacing(spacing);
         m_imageData->GetDimensions(dims);
 
-        int voxelX = std::round((worldPos[0] - origin[0]) / spacing[0]);
+        /*int voxelX = std::round((worldPos[0] - origin[0]) / spacing[0]);
         int voxelY = std::round((worldPos[1] - origin[1]) / spacing[1]);
-        int voxelZ = std::round((worldPos[2] - origin[2]) / spacing[2]);
+        int voxelZ = std::round((worldPos[2] - origin[2]) / spacing[2]);*/
+
+        int voxelX = std::round((worldPos[0]) / spacing[0]);
+        int voxelY = std::round((worldPos[1]) / spacing[1]);
+        int voxelZ = std::round((worldPos[2]) / spacing[2]);
+
+
         voxels[0] = voxelX;
         voxels[1] = voxelY;
         voxels[2] = voxelZ;
@@ -160,7 +167,7 @@ void VolumeBrushInteractorStyle::PaintVoxels(int* voxelIndex) {
                     int index = i + jOffset + kOffset;
                     short huValue = m_imageData->GetScalarComponentAsDouble(i, j, k, 0);
                     
-                    if (basePtr[index] != 1 && huValue >= 200) {
+                    if (basePtr[index] != 1 && huValue >= 300) {
                         basePtr[index] = 1;
                         modified = true;
                         //m_maskData->Modified();
@@ -176,7 +183,7 @@ void VolumeBrushInteractorStyle::PaintVoxels(int* voxelIndex) {
         // VTK 파이프라인에 데이터가 수정되었음을 알림
         m_maskData->Modified();
         if (!firstDraw) {
-            m_maskData->GetPointData()->GetScalars()->Modified();
+            //m_maskData->GetPointData()->GetScalars()->Modified();
             firstDraw = true;
 
         };
@@ -184,17 +191,5 @@ void VolumeBrushInteractorStyle::PaintVoxels(int* voxelIndex) {
             this->Interactor->Render();
 
         }
-        //m_maskData->GetPointData()->Modified();
-
-
-        /*if (this->GetDefaultRenderer()) {
-            this->GetDefaultRenderer()->GetRenderWindow()->Render();
-            qDebug() << "[Brush Success] Painted";
-
-        }
-        else if (this->GetInteractor() && this->GetInteractor()->GetRenderWindow()) {
-            this->GetInteractor()->GetRenderWindow()->Render();
-        }*/
-
     }
 }

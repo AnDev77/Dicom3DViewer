@@ -41,9 +41,12 @@ DicomVolumeViewer::DicomVolumeViewer(QWidget* parent) : QMainWindow(parent) {
     m_showButton = new QPushButton("Show Volume", this);
     
     m_viewComboBox = new QComboBox(this);
+    m_viewComboBox->addItem("Select");
     m_viewComboBox->addItem("Axial");
     m_viewComboBox->addItem("Coronal");
     m_viewComboBox->addItem("Sagittal");
+
+    m_viewComboBox->setCurrentIndex(0);
     vtkWidget = new QVTKOpenGLNativeWidget(this);
 
     m_brushToggleBtn = new QPushButton("3D Brush Mode", this);
@@ -80,7 +83,9 @@ QString DicomVolumeViewer::getSelectedViewMode() const {
 
 void DicomVolumeViewer::RenderVolume(vtkSmartPointer<vtkImageData> imageData) {
     if (!imageData) return;
-
+    if (m_viewComboBox) {
+        m_viewComboBox->setCurrentIndex(0); // ¶Ç´Â m_viewComboBox->setCurrentText("Select");
+    }
     auto volumeMapper = vtkSmartPointer<vtkSmartVolumeMapper>::New();
     volumeMapper->SetInputData(imageData);
     if(!m_currentImageData) m_currentImageData = imageData;

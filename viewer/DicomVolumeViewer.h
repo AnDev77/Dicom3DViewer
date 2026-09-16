@@ -38,7 +38,9 @@ public:
     void RenderSlice(vtkSmartPointer<vtkImageData> imageData, QString viewMode); // ★ 2D 단면 렌더링 함수 신규 추가
     void ToggleBrushMode(); // UI 토글 버튼 시그널과 연결
     void SetImageData(vtkSmartPointer<vtkImageData> data) { m_currentImageData = data; }
-
+    void setComboBox(){
+        m_viewComboBox->setCurrentIndex(0);
+    }
 
 private:
 

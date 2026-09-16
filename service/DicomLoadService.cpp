@@ -8,7 +8,7 @@
 
 DicomLoadService::DicomLoadService(QObject* parent) : QObject(parent) {}
 DicomLoadService::~DicomLoadService() {
-    cleanupThread(); // 객체가 소멸할 때 실행 중인 스레드가 있다면 완전히 종료될 때까지 대기
+   // cleanupThread(); // 객체가 소멸할 때 실행 중인 스레드가 있다면 완전히 종료될 때까지 대기
 }
 void DicomLoadService::cleanupThread() {
     if (m_thread) {
@@ -24,28 +24,29 @@ void DicomLoadService::cleanupThread() {
 }
 void DicomLoadService::loadAsync(const QString& folderPath) {
 
-    cleanupThread();
+    //cleanupThread();
 
-    m_thread = new QThread(this);
-    m_worker = new LoaderWorker(folderPath);
+    QThread* thread = new QThread();
+    LoaderWorker* worker = new LoaderWorker(folderPath);
 
-    m_worker->moveToThread(m_thread);
+    worker->moveToThread(thread);
 
-    connect(m_thread, &QThread::started, m_worker, &LoaderWorker::run);
-    connect(m_worker, &LoaderWorker::finished, this, [=](vtkSmartPointer<vtkImageData> data) {
+    connect(thread, &QThread::started, worker, &LoaderWorker::run);
+    connect(worker, &LoaderWorker::finished, this, [=](vtkSmartPointer<vtkImageData> data) {
         emit finished(data);
-        m_thread->quit();
+        thread->quit();
         });
-    connect(m_worker, &LoaderWorker::errorOccurred, this, [=](QString msg) {
+    connect(worker, &LoaderWorker::errorOccurred, this, [=](QString msg) {
         emit error(msg);
-        m_thread->quit();
+        thread->quit();
         });
 
 
-    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
-    
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
 
-    m_thread->start();
+
+    thread->start();
 }
 
 

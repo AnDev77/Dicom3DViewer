@@ -35,6 +35,7 @@ void MainController::onOpenFolderClicked() {
             viewer->getOpenButton()->setEnabled(true); // 버튼 복구
             viewer->InitMaskData();
             viewer->SetImageData(volumeData);
+            viewer->setComboBox();
             QMessageBox::information(viewer, "Success", "Asynchronous DICOM volume loading completed!");
         }
         else {

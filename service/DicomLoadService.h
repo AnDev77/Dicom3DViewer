@@ -3,6 +3,8 @@
 #include <QString>
 #include <vtkSmartPointer.h>
 #include <vtkImageData.h>
+#include <QThread>
+#include "LoadWorker.h"
 
 class DicomLoadService : public QObject {
     Q_OBJECT
@@ -12,7 +14,13 @@ public:
 
     void loadAsync(const QString& folderPath);
 
+
 signals:
     void finished(vtkSmartPointer<vtkImageData> imageData);
     void error(const QString& message);
+
+private:
+    void cleanupThread();
+    QThread* m_thread = nullptr;
+    LoaderWorker* m_worker = nullptr;
 };

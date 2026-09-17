@@ -14,8 +14,10 @@ private slots:
     void onOpenFolderClicked();
     void onViewComboClicked();
     void onShowButtonClicked(); // ★ 새로 추가될 Show 버튼 처리 슬롯
-    // ★ 새로 추가될 View 버튼 처리 슬롯
 
+    void onToggle3DBrush();
+    
+    // ★ 새로 추가될 View 버튼 처리 슬롯    
 private:
     DicomVolumeViewer* viewer;
 

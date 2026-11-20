@@ -1,12 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
-project(BuildTest)
+project(DicomViewer)
 
 # vcpkg 툴체인 파일 경로 연결 (환경 변수 VCPKG_ROOT 활용)
-if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-    if(DEFINED ENV{VCPKG_ROOT})
-        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
-    endif()
-endif()
+#if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+#    if(DEFINED ENV{VCPKG_ROOT})
+#        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+ #   endif()
+#endif()
+
 
 
 set(CMAKE_CXX_STANDARD 17)
@@ -14,11 +15,14 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+set(CMAKE_PREFIX_PATH "C:/Qt/6.7.3/msvc2019_64")
+
+
 # 1. 라이브러리 경로 변수 설정 (본인 PC 경로에 맞게 수정)
 set(QT_BIN_DIR "C:/Qt/6.7.3/msvc2019_64/bin")
-set(VTK_BIN_DIR "C:/VTK/build/bin")
+set(VTK_BIN_DIR "C:/VTK/Build/bin/Debug")
 set(GDCM_DIR "C:/GDCM-3.2.7-Windows-x86_64")
-set(VTK_DIR "C:/VTK/build")
+set(VTK_DIR "C:/VTK/Build")
 # Qt6 찾기
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets)
 
@@ -66,18 +70,36 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     gdcmMSFF gdcmDICT gdcmDSED gdcmCommon gdcmIOD
 )
 
+
+
 # 4. [핵심 최적화] Visual Studio 실행/디버깅 시에만 DLL 경로 임시 참조
 # 이렇게 하면 robocopy로 무거운 DLL을 복사할 필요가 아예 사라집니다.
 set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_ENVIRONMENT 
-    "PATH=${GDCM_DIR}/bin;${VTK_BIN_DIR};${QT_BIN_DIR};%PATH%"
+    "PATH=${GDCM_DIR}/bin;${VTK_BIN_DIR}; ${QT_BIN_DIR};%PATH%"
 )
 file(GLOB VTK_DEBUG_DLLS "${VTK_BIN_DIR}/*-9.7d.dll")
 file(GLOB GDCM_DEBUG_DLLS "${GDCM_DIR}/bin/*.dll") # GDCM 디버그용 DLL 전체 수집
 
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    # Debug 모드일 때 수집한 GDCM 및 VTK 모든 디버그 DLL을 실행 폴더로 일괄 복사
-    COMMAND $<$<CONFIG:Debug>:${CMAKE_COMMAND}> -E copy_if_different ${GDCM_DEBUG_DLLS} $<TARGET_FILE_DIR:${PROJECT_NAME}>
-    COMMAND $<$<CONFIG:Debug>:${CMAKE_COMMAND}> -E copy_if_different ${VTK_DEBUG_DLLS} $<TARGET_FILE_DIR:${PROJECT_NAME}>
-    
-    COMMENT "Bulk copying all GDCM and VTK debug DLLs..."
-)
+if(GDCM_DEBUG_DLLS)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND $<$<CONFIG:Debug>:${CMAKE_COMMAND}> -E copy_if_different ${GDCM_DEBUG_DLLS} $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        COMMENT "Copying GDCM DLLs..."
+    )
+endif()
+
+# 2. VTK DLL 복사 (비어있지 않을 때만 실행하여 에러 방지)
+if(VTK_DEBUG_DLLS)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND $<$<CONFIG:Debug>:${CMAKE_COMMAND}> -E copy_if_different ${VTK_DEBUG_DLLS} $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        COMMENT "Copying VTK DLLs..."
+    )
+endif()
+
+# 3. 누락되었던 Qt DLL 자동 복사 추가 (windeployqt 활용)
+get_target_property(QT_WINDEPLOYQT_EXECUTABLE Qt6::windeployqt LOCATION)
+if(QT_WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${QT_WINDEPLOYQT_EXECUTABLE} $<TARGET_FILE:${PROJECT_NAME}>
+        COMMENT "Running windeployqt to copy Qt DLLs..."
+    )
+endif()

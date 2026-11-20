@@ -3,13 +3,32 @@
 #include "DicomLoadService.h"
 #include "LoadWorker.h"
 #include <QThread>
+#include <QLabel>
+
 
 DicomLoadService::DicomLoadService(QObject* parent) : QObject(parent) {}
-DicomLoadService::~DicomLoadService() {}
-
+DicomLoadService::~DicomLoadService() {
+   // cleanupThread(); // 객체가 소멸할 때 실행 중인 스레드가 있다면 완전히 종료될 때까지 대기
+}
+void DicomLoadService::cleanupThread() {
+    if (m_thread) {
+        if (m_thread->isRunning()) {
+            m_thread->requestInterruption(); // 작업 중단 요청 (필요 시)
+            m_thread->quit();
+            m_thread->wait(); // ★ 스레드가 완전히 끝날 때까지 여기서 안전하게 대기!
+        }
+        delete m_thread; // 스레드가 완전히 멈춘 후 안전하게 메모리 해제
+        m_thread = nullptr;
+        m_worker = nullptr; // worker는 thread의 finished 시점에 deleteLater로 처리
+    }
+}
 void DicomLoadService::loadAsync(const QString& folderPath) {
-    QThread* thread = new QThread(this);
+
+    //cleanupThread();
+
+    QThread* thread = new QThread();
     LoaderWorker* worker = new LoaderWorker(folderPath);
+
     worker->moveToThread(thread);
 
     connect(thread, &QThread::started, worker, &LoaderWorker::run);
@@ -22,9 +41,10 @@ void DicomLoadService::loadAsync(const QString& folderPath) {
         thread->quit();
         });
 
+
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    connect(thread, &QThread::finished, this, &QObject::deleteLater);
+
 
     thread->start();
 }

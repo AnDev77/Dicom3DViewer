@@ -14,6 +14,9 @@
 #include <vtkImageAppend.h>
 #include <vtkImageShiftScale.h>
 #include <vtkImageImport.h>
+#include <vtkConnectivityFilter.h>
+
+
 
 LoaderWorker::LoaderWorker(const QString& path, QObject* parent)
     : QObject(parent), m_path(path) {
